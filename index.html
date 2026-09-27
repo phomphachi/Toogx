@@ -108,9 +108,6 @@ function render(){
     const row = document.createElement('div');
     row.className = 'row';
 
-    // Chrome/Chromium tabanlı tarayıcılarda intent resolve olmazsa
-    // browser_fallback_url'e düşer; biz bunu aynı sayfaya #nores=ID
-    // olarak yönlendirip otomatik "yanıt yok" işaretlemek için kullanıyoruz.
     const baseUrl = location.href.split('#')[0];
     const fallback = encodeURIComponent(baseUrl + '#nores=' + item.id);
     const uri = `intent:#Intent;action=${item.action};S.browser_fallback_url=${fallback};end`;
@@ -143,8 +140,6 @@ function onTry(id){
   state[id] = {...(state[id]||{}), status:'trying', lastTried: Date.now()};
   saveState();
   updateStatus(id);
-  // Sekme arka plana geçtiyse (başka bir ekran açıldıysa) başarılı say;
-  // 900ms içinde hâlâ buradaysak ve fallback tetiklenmediyse "yanıt yok" say.
   setTimeout(()=>{
     if(document.hidden){
       state[id] = {...(state[id]||{}), status:'success'};
@@ -161,7 +156,6 @@ function updateStatus(id){
   if(el) el.textContent = statusLabel(state[id]);
 }
 
-// Fallback URL ile geri döndüğümüzde otomatik "yanıt yok" işaretle
 (function checkFallback(){
   const m = location.hash.match(/nores=(\d+)/);
   if(m){
@@ -174,11 +168,11 @@ function updateStatus(id){
 
 document.addEventListener('visibilitychange', ()=>{
   if(!document.hidden){
-    // Sayfaya geri dönüldü: hâlâ "deneniyor" görünenleri başarılı yap
     let changed = false;
     Object.keys(state).forEach(id=>{
       if(state[id].status === 'trying'){
         state[id].status = 'success';
+        changed = true;
       }
     });
     if(changed){ saveState(); render(); }
@@ -194,16 +188,12 @@ function resetState(){
 }
 
 function exportState(){
-  const lines = ITEMS.map(item=>{
-    const s = state[item.id] || {};
-    const status = statusLabel(s) || 'denenmedi';
-    return `${item.id}. ${item.label} — ${status}${s.note ? ' | not: ' + s.note : ''}`;
+  const txt = JSON.stringify(state, null, 2);
+  navigator.clipboard.writeText(txt).then(()=>{
+    alert('Durum panoya kopyalandı!');
+  }).catch(()=>{
+    alert('Kopyalanamadı: \n' + txt);
   });
-  const text = lines.join('\n');
-  if(navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(text).catch(()=>{});
-  }
-  alert(text);
 }
 
 render();
