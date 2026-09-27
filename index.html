@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Togg IVI Bypass Kontrol Paneli</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; background-color: #f4f4f9; color: #333; }
+        h1 { color: #0052cc; font-size: 24px; }
+        p { font-size: 14px; color: #666; }
+        .btn { display: block; width: 85%; max-width: 300px; margin: 15px auto; padding: 15px; font-size: 16px; font-weight: bold; color: #fff; background-color: #0072ff; border: none; border-radius: 8px; text-decoration: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); cursor: pointer; }
+        .btn-dev { background-color: #28a745; }
+        .btn-app { background-color: #ffc107; color: #000; }
+        .footer { margin-top: 30px; font-size: 12px; color: #999; }
+    </style>
+</head>
+<body>
+
+    <h1>Togg IVI Bypass Paneli</h1>
+    <p>Aşağıdaki butonlar WebView dışına sıçramayı (Escape) tetikler. Sırayla deneyiniz.</p>
+
+    <!-- Seçenek 1: Genel Ayarlar Menüsü -->
+    <a href="intent:#Intent;action=android.settings.SETTINGS;end" class="btn">1. Ana Ayarları Aç</a>
+
+    <!-- Seçenek 2: Doğrudan Geliştirici Seçenekleri -->
+    <a href="intent:#Intent;action=android.settings.APPLICATION_DEVELOPMENT_SETTINGS;end" class="btn btn-dev">2. Geliştirici Modunu Aç (Yol A)</a>
+    <a href="intent:#Intent;action=android.settings.DEVELOPER_OPTIONS_SETTINGS;end" class="btn btn-dev">3. Geliştirici Modunu Aç (Yol B)</a>
+
+    <!-- Seçenek 3: Uygulama Yönetimi (Buradan da ayarlara geçilebilir) -->
+    <a href="intent:#Intent;action=android.settings.MANAGE_ALL_APPLICATIONS_SETTINGS;end" class="btn btn-app">4. Tüm Uygulamaları Listele</a>
+
+    <div class="footer">Eğer butonlar tepki vermiyorsa, WebView intent şemalarını tamamen engelliyor demektir.</div>
+
+</body>
+</html>
