@@ -3,33 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Togg IVI Bypass Kontrol Paneli</title>
+    <title>Togg IVI Öncelikli Bypass Paneli</title>
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; background-color: #f4f4f9; color: #333; }
-        h1 { color: #0052cc; font-size: 24px; }
-        p { font-size: 14px; color: #666; }
-        .btn { display: block; width: 85%; max-width: 300px; margin: 15px auto; padding: 15px; font-size: 16px; font-weight: bold; color: #fff; background-color: #0072ff; border: none; border-radius: 8px; text-decoration: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); cursor: pointer; }
-        .btn-dev { background-color: #28a745; }
-        .btn-app { background-color: #ffc107; color: #000; }
-        .footer { margin-top: 30px; font-size: 12px; color: #999; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; padding: 20px; background-color: #111a24; color: #fff; }
+        h1 { color: #00e5ff; font-size: 24px; margin-bottom: 5px; }
+        p { font-size: 13px; color: #b0bec5; margin-bottom: 25px; }
+        .section-title { font-size: 14px; font-weight: bold; color: #ffca28; text-align: left; margin: 25px auto 5px auto; max-width: 320px; text-transform: uppercase; border-bottom: 2px solid #ffca28; padding-bottom: 3px; }
+        .btn { display: block; width: 90%; max-width: 320px; margin: 10px auto; padding: 14px; font-size: 15px; font-weight: bold; color: #fff; background-color: #1c2d3d; border: none; border-radius: 8px; text-decoration: none; box-shadow: 0 4px 6px rgba(0,0,0,0.4); transition: 0.2s; }
+        .btn-high { background-color: #00c853; color: #fff; } /* En Yüksek */
+        .btn-mid { background-color: #0288d1; color: #fff; }  /* Orta */
+        .btn-low { background-color: #d32f2f; color: #fff; }  /* Düşük */
     </style>
 </head>
 <body>
 
-    <h1>Togg IVI Bypass Paneli</h1>
-    <p>Aşağıdaki butonlar WebView dışına sıçramayı (Escape) tetikler. Sırayla deneyiniz.</p>
+    <h1>Togg IVI Öncelikli Bypass Paneli</h1>
+    <p>Butonlar en yüksek ihtimalden en düşüğe doğru sıralanmıştır. Sırayla deneyiniz.</p>
 
-    <!-- Seçenek 1: Genel Ayarlar Menüsü -->
-    <a href="intent:#Intent;action=android.settings.SETTINGS;end" class="btn">1. Ana Ayarları Aç</a>
+    <!-- 1. GRUP: EN YÜKSEK İHTİMAL (SERVIS VE YAN KAPILAR) -->
+    <div class="section-title">⭐ Seviye 1: En Yüksek İhtimal</div>
+    
+    <!-- Klavye/Sözlük: En çok unutulan açık. Sağ üstteki arama ikonundan sisteme sızılabilir -->
+    <a href="intent:#Intent;action=android.settings.USER_DICTIONARY_SETTINGS;end" class="btn btn-high">1. Klavye / Sözlük Ayarları</a>
+    
+    <!-- Yedekleme/Sıfırlama: Servis personeli için açık bırakılan menü -->
+    <a href="intent:#Intent;action=android.settings.BACKUP_AND_RESET_SETTINGS;end" class="btn btn-high">2. Yedekleme ve Sıfırlama</a>
+    
+    <!-- Google Hesap: AAOS sistemlerinde yüksek izinli Google katmanına sıçrama -->
+    <a href="intent:#Intent;action=com.google.android.gms.settings.GOOGLE_SETTINGS;end" class="btn btn-high">3. Google Hesap Ayarları</a>
+    <a href="intent:#Intent;action=android.settings.SYNC_SETTINGS;end" class="btn btn-high">4. Hesap Senkronizasyon Menüsü</a>
 
-    <!-- Seçenek 2: Doğrudan Geliştirici Seçenekleri -->
-    <a href="intent:#Intent;action=android.settings.APPLICATION_DEVELOPMENT_SETTINGS;end" class="btn btn-dev">2. Geliştirici Modunu Aç (Yol A)</a>
-    <a href="intent:#Intent;action=android.settings.DEVELOPER_OPTIONS_SETTINGS;end" class="btn btn-dev">3. Geliştirici Modunu Aç (Yol B)</a>
+    <!-- 2. GRUP: ORTA İHTİMAL (BAĞLANTI VE DONANIM KONTROLÜ) -->
+    <div class="section-title">⚡ Seviye 2: Orta İhtimal</div>
+    
+    <!-- Wi-Fi: Açılırsa, gelişmiş ayarlardan veya gizlilik linklerinden ana menüye zıplanabilir -->
+    <a href="intent:#Intent;action=android.settings.WIFI_SETTINGS;end" class="btn btn-mid">5. Wi-Fi Ayarlarını Aç</a>
+    <a href="intent:#Intent;action=android.settings.BLUETOOTH_SETTINGS;end" class="btn btn-mid">6. Bluetooth Ayarlarını Aç</a>
+    <a href="intent:#Intent;action=android.settings.WIRELESS_SETTINGS;end" class="btn btn-mid">7. Diğer Kablosuz Ağlar</a>
+    <a href="intent:#Intent;action=android.settings.VPN_SETTINGS;end" class="btn btn-mid">8. VPN Ayarlarını Aç</a>
 
-    <!-- Seçenek 3: Uygulama Yönetimi (Buradan da ayarlara geçilebilir) -->
-    <a href="intent:#Intent;action=android.settings.MANAGE_ALL_APPLICATIONS_SETTINGS;end" class="btn btn-app">4. Tüm Uygulamaları Listele</a>
+    <!-- 3. GRUP: DÜŞÜK İHTİMAL (DEPOLAMA VE GÜVENLİK) -->
+    <div class="section-title">⚠️ Seviye 3: Düşük İhtimal</div>
+    
+    <!-- Depolama: Açılırsa yerel Dosya Yöneticisine (Files) yönlendirir -->
+    <a href="intent:#Intent;action=android.settings.INTERNAL_STORAGE_SETTINGS;end" class="btn">9. Hafıza / Depolama Ayarları</a>
+    <a href="intent:#Intent;action=android.settings.SECURITY_SETTINGS;end" class="btn">10. Güvenlik Ayarları</a>
+    <a href="intent:#Intent;action=android.settings.PRIVACY_SETTINGS;end" class="btn">11. Gizlilik Ayarları</a>
 
-    <div class="footer">Eğer butonlar tepki vermiyorsa, WebView intent şemalarını tamamen engelliyor demektir.</div>
+    <!-- 4. GRUP: EN DÜŞÜK İHTİMAL (İLK KİLİTLENEN ANA SİSTEM YAPILARI) -->
+    <div class="section-title">🚫 Seviye 4: En Düşük İhtimal</div>
+    
+    <a href="intent:#Intent;action=android.settings.MANAGE_ALL_APPLICATIONS_SETTINGS;end" class="btn btn-low">12. Tüm Uygulamalar Listesi</a>
+    <a href="intent:#Intent;action=android.settings.DEVICE_INFO_SETTINGS;end" class="btn btn-low">13. Cihaz Hakkında Menüsü</a>
+    <a href="intent:#Intent;action=android.settings.APPLICATION_DEVELOPMENT_SETTINGS;end" class="btn btn-low">14. Geliştirici Seçenekleri (Yol A)</a>
+    <a href="intent:#Intent;action=android.settings.DEVELOPER_OPTIONS_SETTINGS;end" class="btn btn-low">15. Geliştirici Seçenekleri (Yol B)</a>
+    <a href="intent:#Intent;action=android.settings.SETTINGS;end" class="btn btn-low">16. Ana Ayarları Zorla</a>
 
 </body>
 </html>
