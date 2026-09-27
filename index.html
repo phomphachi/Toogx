@@ -30,3 +30,183 @@
   .note-wrap{padding:6px 12px 10px;background:rgba(0,0,0,.15);}
   .note{width:100%;font-size:12px;padding:6px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:#0d151d;color:#fff;}
   .note::placeholder{color:#5f7182;}
+</style>
+</head>
+<body>
+
+<h1>Togg IVI Öncelikli Bypass Paneli</h1>
+<p class="sub">Sırayla dene — her denemenin sonucu otomatik işaretlenir, notlarını yazabilirsin.</p>
+
+<div class="toolbar">
+  <button onclick="exportState()">📋 Durumu kopyala</button>
+  <button class="reset" onclick="resetState()">↺ Sıfırla</button>
+</div>
+
+<div id="app"></div>
+
+<script>
+const ITEMS = [
+  {id:1,  tier:'high',   label:'Klavye / Sözlük Ayarları', action:'android.settings.USER_DICTIONARY_SETTINGS', hint:'En çok unutulan açık; arama ikonundan sisteme sızılabilir.'},
+  {id:2,  tier:'high',   label:'Yedekleme ve Sıfırlama', action:'android.settings.BACKUP_AND_RESET_SETTINGS', hint:'Servis personeli için açık bırakılan menü.'},
+  {id:3,  tier:'high',   label:'Google Hesap Ayarları', action:'com.google.android.gms.settings.GOOGLE_SETTINGS', hint:'GMS kurulu değilse resolve olmaz.'},
+  {id:4,  tier:'high',   label:'Hesap Senkronizasyon Menüsü', action:'android.settings.SYNC_SETTINGS'},
+  {id:5,  tier:'mid',    label:'Wi-Fi Ayarlarını Aç', action:'android.settings.WIFI_SETTINGS'},
+  {id:6,  tier:'mid',    label:'Bluetooth Ayarlarını Aç', action:'android.settings.BLUETOOTH_SETTINGS'},
+  {id:7,  tier:'mid',    label:'Diğer Kablosuz Ağlar', action:'android.settings.WIRELESS_SETTINGS'},
+  {id:8,  tier:'mid',    label:'VPN Ayarlarını Aç', action:'android.settings.VPN_SETTINGS'},
+  {id:9,  tier:'low',    label:'Hafıza / Depolama Ayarları', action:'android.settings.INTERNAL_STORAGE_SETTINGS', hint:'Açılırsa yerel Dosya Yöneticisine yönlendirir.'},
+  {id:10, tier:'low',    label:'Güvenlik Ayarları', action:'android.settings.SECURITY_SETTINGS'},
+  {id:11, tier:'low',    label:'Gizlilik Ayarları', action:'android.settings.PRIVACY_SETTINGS'},
+  {id:12, tier:'lowest', label:'Tüm Uygulamalar Listesi', action:'android.settings.MANAGE_ALL_APPLICATIONS_SETTINGS'},
+  {id:13, tier:'lowest', label:'Cihaz Hakkında Menüsü', action:'android.settings.DEVICE_INFO_SETTINGS'},
+  {id:14, tier:'lowest', label:'Geliştirici Seçenekleri (Yol A)', action:'android.settings.APPLICATION_DEVELOPMENT_SETTINGS'},
+  {id:15, tier:'lowest', label:'Geliştirici Seçenekleri (Yol B)', action:'android.settings.DEVELOPER_OPTIONS_SETTINGS'},
+  {id:16, tier:'lowest', label:'Ana Ayarları Zorla', action:'android.settings.SETTINGS'},
+];
+
+const TIER_LABEL = {
+  high:  '⭐ Seviye 1: En Yüksek İhtimal',
+  mid:   '⚡ Seviye 2: Orta İhtimal',
+  low:   '⚠️ Seviye 3: Düşük İhtimal',
+  lowest:'🚫 Seviye 4: En Düşük İhtimal',
+};
+
+const STORE_KEY = 'togg_bypass_state_v1';
+
+function loadState(){
+  try{ return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
+  catch(e){ return {}; }
+}
+function saveState(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+  catch(e){ /* depolama yoksa sessizce yut */ }
+}
+let state = loadState();
+
+function statusLabel(s){
+  if(!s || !s.status) return '';
+  if(s.status==='success') return '✓ açıldı';
+  if(s.status==='fail')    return '✗ yanıt yok';
+  if(s.status==='trying')  return '… deneniyor';
+  return '';
+}
+
+function render(){
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  let lastTier = null;
+  ITEMS.forEach(item=>{
+    if(item.tier !== lastTier){
+      const h = document.createElement('div');
+      h.className = 'section-title';
+      h.textContent = TIER_LABEL[item.tier];
+      app.appendChild(h);
+      lastTier = item.tier;
+    }
+    const s = state[item.id] || {};
+
+    const row = document.createElement('div');
+    row.className = 'row';
+
+    // Chrome/Chromium tabanlı tarayıcılarda intent resolve olmazsa
+    // browser_fallback_url'e düşer; biz bunu aynı sayfaya #nores=ID
+    // olarak yönlendirip otomatik "yanıt yok" işaretlemek için kullanıyoruz.
+    const baseUrl = location.href.split('#')[0];
+    const fallback = encodeURIComponent(baseUrl + '#nores=' + item.id);
+    const uri = `intent:#Intent;action=${item.action};S.browser_fallback_url=${fallback};end`;
+
+    const a = document.createElement('a');
+    a.className = 'btn tier-' + item.tier;
+    a.href = uri;
+    a.innerHTML = `<span>${item.id}. ${item.label}</span><span class="status" id="status-${item.id}">${statusLabel(s)}</span>`;
+    a.addEventListener('click', ()=> onTry(item.id));
+    row.appendChild(a);
+
+    const noteWrap = document.createElement('div');
+    noteWrap.className = 'note-wrap';
+    const note = document.createElement('input');
+    note.className = 'note';
+    note.placeholder = item.hint || 'not ekle...';
+    note.value = s.note || '';
+    note.addEventListener('input', ()=>{
+      state[item.id] = {...(state[item.id]||{}), note: note.value};
+      saveState();
+    });
+    noteWrap.appendChild(note);
+    row.appendChild(noteWrap);
+
+    app.appendChild(row);
+  });
+}
+
+function onTry(id){
+  state[id] = {...(state[id]||{}), status:'trying', lastTried: Date.now()};
+  saveState();
+  updateStatus(id);
+  // Sekme arka plana geçtiyse (başka bir ekran açıldıysa) başarılı say;
+  // 900ms içinde hâlâ buradaysak ve fallback tetiklenmediyse "yanıt yok" say.
+  setTimeout(()=>{
+    if(document.hidden){
+      state[id] = {...(state[id]||{}), status:'success'};
+    } else if((state[id]||{}).status === 'trying'){
+      state[id] = {...(state[id]||{}), status:'fail'};
+    }
+    saveState();
+    updateStatus(id);
+  }, 900);
+}
+
+function updateStatus(id){
+  const el = document.getElementById('status-' + id);
+  if(el) el.textContent = statusLabel(state[id]);
+}
+
+// Fallback URL ile geri döndüğümüzde otomatik "yanıt yok" işaretle
+(function checkFallback(){
+  const m = location.hash.match(/nores=(\d+)/);
+  if(m){
+    const id = m[1];
+    state[id] = {...(state[id]||{}), status:'fail'};
+    saveState();
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+})();
+
+document.addEventListener('visibilitychange', ()=>{
+  if(!document.hidden){
+    // Sayfaya geri dönüldü: hâlâ "deneniyor" görünenleri başarılı yap
+    let changed = false;
+    Object.keys(state).forEach(id=>{
+      if(state[id].status === 'trying'){
+        state[id].status = 'success';
+      }
+    });
+    if(changed){ saveState(); render(); }
+  }
+});
+
+function resetState(){
+  if(confirm('Tüm işaretlemeler ve notlar silinsin mi?')){
+    state = {};
+    saveState();
+    render();
+  }
+}
+
+function exportState(){
+  const lines = ITEMS.map(item=>{
+    const s = state[item.id] || {};
+    const status = statusLabel(s) || 'denenmedi';
+    return `${item.id}. ${item.label} — ${status}${s.note ? ' | not: ' + s.note : ''}`;
+  });
+  const text = lines.join('\n');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).catch(()=>{});
+  }
+  alert(text);
+}
+
+render();
+</script>
+</body>
+</html>
