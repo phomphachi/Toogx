@@ -1,63 +1,32 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Togg IVI Öncelikli Bypass Paneli</title>
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; padding: 20px; background-color: #111a24; color: #fff; }
-        h1 { color: #00e5ff; font-size: 24px; margin-bottom: 5px; }
-        p { font-size: 13px; color: #b0bec5; margin-bottom: 25px; }
-        .section-title { font-size: 14px; font-weight: bold; color: #ffca28; text-align: left; margin: 25px auto 5px auto; max-width: 320px; text-transform: uppercase; border-bottom: 2px solid #ffca28; padding-bottom: 3px; }
-        .btn { display: block; width: 90%; max-width: 320px; margin: 10px auto; padding: 14px; font-size: 15px; font-weight: bold; color: #fff; background-color: #1c2d3d; border: none; border-radius: 8px; text-decoration: none; box-shadow: 0 4px 6px rgba(0,0,0,0.4); transition: 0.2s; }
-        .btn-high { background-color: #00c853; color: #fff; } /* En Yüksek */
-        .btn-mid { background-color: #0288d1; color: #fff; }  /* Orta */
-        .btn-low { background-color: #d32f2f; color: #fff; }  /* Düşük */
-    </style>
-</head>
-<body>
-
-    <h1>Togg IVI Öncelikli Bypass Paneli</h1>
-    <p>Butonlar en yüksek ihtimalden en düşüğe doğru sıralanmıştır. Sırayla deneyiniz.</p>
-
-    <!-- 1. GRUP: EN YÜKSEK İHTİMAL (SERVIS VE YAN KAPILAR) -->
-    <div class="section-title">⭐ Seviye 1: En Yüksek İhtimal</div>
-    
-    <!-- Klavye/Sözlük: En çok unutulan açık. Sağ üstteki arama ikonundan sisteme sızılabilir -->
-    <a href="intent:#Intent;action=android.settings.USER_DICTIONARY_SETTINGS;end" class="btn btn-high">1. Klavye / Sözlük Ayarları</a>
-    
-    <!-- Yedekleme/Sıfırlama: Servis personeli için açık bırakılan menü -->
-    <a href="intent:#Intent;action=android.settings.BACKUP_AND_RESET_SETTINGS;end" class="btn btn-high">2. Yedekleme ve Sıfırlama</a>
-    
-    <!-- Google Hesap: AAOS sistemlerinde yüksek izinli Google katmanına sıçrama -->
-    <a href="intent:#Intent;action=com.google.android.gms.settings.GOOGLE_SETTINGS;end" class="btn btn-high">3. Google Hesap Ayarları</a>
-    <a href="intent:#Intent;action=android.settings.SYNC_SETTINGS;end" class="btn btn-high">4. Hesap Senkronizasyon Menüsü</a>
-
-    <!-- 2. GRUP: ORTA İHTİMAL (BAĞLANTI VE DONANIM KONTROLÜ) -->
-    <div class="section-title">⚡ Seviye 2: Orta İhtimal</div>
-    
-    <!-- Wi-Fi: Açılırsa, gelişmiş ayarlardan veya gizlilik linklerinden ana menüye zıplanabilir -->
-    <a href="intent:#Intent;action=android.settings.WIFI_SETTINGS;end" class="btn btn-mid">5. Wi-Fi Ayarlarını Aç</a>
-    <a href="intent:#Intent;action=android.settings.BLUETOOTH_SETTINGS;end" class="btn btn-mid">6. Bluetooth Ayarlarını Aç</a>
-    <a href="intent:#Intent;action=android.settings.WIRELESS_SETTINGS;end" class="btn btn-mid">7. Diğer Kablosuz Ağlar</a>
-    <a href="intent:#Intent;action=android.settings.VPN_SETTINGS;end" class="btn btn-mid">8. VPN Ayarlarını Aç</a>
-
-    <!-- 3. GRUP: DÜŞÜK İHTİMAL (DEPOLAMA VE GÜVENLİK) -->
-    <div class="section-title">⚠️ Seviye 3: Düşük İhtimal</div>
-    
-    <!-- Depolama: Açılırsa yerel Dosya Yöneticisine (Files) yönlendirir -->
-    <a href="intent:#Intent;action=android.settings.INTERNAL_STORAGE_SETTINGS;end" class="btn">9. Hafıza / Depolama Ayarları</a>
-    <a href="intent:#Intent;action=android.settings.SECURITY_SETTINGS;end" class="btn">10. Güvenlik Ayarları</a>
-    <a href="intent:#Intent;action=android.settings.PRIVACY_SETTINGS;end" class="btn">11. Gizlilik Ayarları</a>
-
-    <!-- 4. GRUP: EN DÜŞÜK İHTİMAL (İLK KİLİTLENEN ANA SİSTEM YAPILARI) -->
-    <div class="section-title">🚫 Seviye 4: En Düşük İhtimal</div>
-    
-    <a href="intent:#Intent;action=android.settings.MANAGE_ALL_APPLICATIONS_SETTINGS;end" class="btn btn-low">12. Tüm Uygulamalar Listesi</a>
-    <a href="intent:#Intent;action=android.settings.DEVICE_INFO_SETTINGS;end" class="btn btn-low">13. Cihaz Hakkında Menüsü</a>
-    <a href="intent:#Intent;action=android.settings.APPLICATION_DEVELOPMENT_SETTINGS;end" class="btn btn-low">14. Geliştirici Seçenekleri (Yol A)</a>
-    <a href="intent:#Intent;action=android.settings.DEVELOPER_OPTIONS_SETTINGS;end" class="btn btn-low">15. Geliştirici Seçenekleri (Yol B)</a>
-    <a href="intent:#Intent;action=android.settings.SETTINGS;end" class="btn btn-low">16. Ana Ayarları Zorla</a>
-
-</body>
-</html>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Togg IVI Öncelikli Bypass Paneli</title>
+<style>
+  :root{
+    --bg:#111a24; --fg:#fff; --muted:#b0bec5;
+    --high:#00c853; --mid:#0288d1; --low:#546e7a; --lowest:#d32f2f;
+    --card:#1c2d3d; --accent:#ffca28;
+  }
+  *{box-sizing:border-box;}
+  body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;text-align:center;padding:20px;background:var(--bg);color:var(--fg);margin:0;}
+  h1{color:#00e5ff;font-size:22px;margin:0 0 4px;}
+  p.sub{font-size:13px;color:var(--muted);margin:0 0 18px;}
+  .toolbar{max-width:340px;margin:0 auto 16px;display:flex;gap:8px;}
+  .toolbar button{flex:1;padding:9px;border:none;border-radius:8px;background:#263849;color:#fff;font-size:12px;font-weight:bold;cursor:pointer;}
+  .toolbar button:focus-visible{outline:2px solid var(--accent);}
+  .toolbar button.reset{background:#4a1d1d;}
+  .section-title{font-size:13px;font-weight:bold;color:var(--accent);text-align:left;margin:22px auto 6px;max-width:340px;text-transform:uppercase;border-bottom:2px solid var(--accent);padding-bottom:3px;}
+  .row{max-width:340px;margin:8px auto;background:var(--card);border-radius:10px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,.4);}
+  .btn{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:13px 14px;font-size:14px;font-weight:bold;color:#fff;text-align:left;text-decoration:none;}
+  .btn:focus-visible{outline:2px solid #fff;outline-offset:-2px;}
+  .tier-high{background:var(--high);}
+  .tier-mid{background:var(--mid);}
+  .tier-low{background:var(--low);}
+  .tier-lowest{background:var(--lowest);}
+  .status{font-size:11px;font-weight:normal;opacity:.9;white-space:nowrap;}
+  .note-wrap{padding:6px 12px 10px;background:rgba(0,0,0,.15);}
+  .note{width:100%;font-size:12px;padding:6px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:#0d151d;color:#fff;}
+  .note::placeholder{color:#5f7182;}
