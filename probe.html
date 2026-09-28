@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Togg IVI Ölçüm — Ortam Kararı</title>
+<style>
+  :root{ --bg:#111a24; --fg:#fff; --muted:#b0bec5; --card:#1c2d3d; --accent:#ffca28; --ok:#00c853; --bad:#d32f2f; --try:#0288d1; }
+  *{box-sizing:border-box;}
+  body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;text-align:center;padding:16px;background:var(--bg);color:var(--fg);margin:0;}
+  h1{color:#00e5ff;font-size:20px;margin:0 0 4px;}
+  p.sub{font-size:12px;color:var(--muted);margin:0 0 14px;}
+  #verdict{max-width:420px;margin:0 auto 14px;padding:14px;border-radius:12px;text-align:left;border:3px solid var(--muted);}
+  #verdict .big{font-size:22px;font-weight:900;letter-spacing:.5px;}
+  #verdict .why{font-size:12px;color:#e0e0e0;margin-top:6px;}
+  #verdict.bad{border-color:var(--bad);background:#3a1414;}
+  #verdict.bad .big{color:#ff6b6b;}
+  #verdict.ok{border-color:var(--ok);background:#0f2f1a;}
+  #verdict.ok .big{color:#69f0ae;}
+  #verdict.try{border-color:var(--try);background:#0f2533;}
+  #verdict.try .big{color:#4fc3f7;}
+  .crit{max-width:420px;margin:0 auto 6px;display:flex;flex-direction:column;gap:8px;}
+  .crit button{padding:12px;border:none;border-radius:10px;background:#b71c1c;color:#fff;font-size:13px;font-weight:bold;cursor:pointer;text-align:left;}
+  .crit button small{display:block;font-weight:normal;font-size:10px;color:#ffcdd2;margin-top:3px;word-break:break-all;}
+  .toolbar{max-width:420px;margin:14px auto;display:flex;gap:8px;flex-wrap:wrap;}
+  .toolbar button,.toolbar a{flex:1;min-width:120px;padding:9px;border:none;border-radius:8px;background:#263849;color:#fff;font-size:12px;font-weight:bold;cursor:pointer;text-decoration:none;text-align:center;}
+  .toolbar button.reset{background:#4a1d1d;}
+  h2{font-size:13px;font-weight:bold;color:var(--accent);text-align:left;margin:20px auto 6px;max-width:420px;text-transform:uppercase;border-bottom:2px solid var(--accent);padding-bottom:3px;}
+  pre{max-width:420px;margin:0 auto;text-align:left;background:#0d151d;border-radius:8px;padding:10px;font-size:11px;color:#cfe8ff;overflow:auto;max-height:220px;white-space:pre-wrap;word-break:break-word;}
+  table{max-width:420px;margin:0 auto;border-collapse:collapse;width:100%;font-size:11px;}
+  th,td{border:1px solid rgba(255,255,255,.12);padding:5px 6px;text-align:left;vertical-align:middle;}
+  th{background:#263849;color:var(--accent);}
+  tr.grp td{background:#37474f;color:#fff;font-weight:bold;font-size:10px;text-transform:uppercase;letter-spacing:.5px;}
+  td.uri{color:#9fd6ff;word-break:break-all;font-family:Consolas,monospace;}
+  .acts{display:flex;gap:4px;flex-wrap:wrap;}
+  .acts button{padding:4px 6px;font-size:10px;border:none;border-radius:6px;background:#37474f;color:#fff;cursor:pointer;}
+  .st{font-weight:bold;white-space:nowrap;}
+  .st.ok{color:var(--ok);} .st.bad{color:var(--bad);} .st.try{color:var(--try);} .st.idle{color:var(--muted);}
+  .row{max-width:420px;margin:8px auto;background:var(--card);border-radius:10px;padding:12px;text-align:left;}
+  #log{max-width:420px;margin:0 auto 20px;text-align:left;font-size:11px;color:#9fb8c8;background:#0d151d;border-radius:8px;padding:10px;max-height:160px;overflow:auto;white-space:pre-wrap;}
+</style>
+</head>
+<body>
+
+<h1>Togg IVI Ölçüm — Ortam Kararı</h1>
+<p class="sub">Tek soru: kiosk <b>plain WebView</b> mi, <b>Chrome/Custom Tab</b> mı? Sonuç, tüm tarayıcı-native vektörlerin canlı/ölü olduğunu belirler. Sayfa açılır açılmaz yukarıdaki kutuyu oku.</p>
+
+<div id="verdict" class="try"><div class="big">…</div><div class="why">okunuyor</div></div>
+
+<h2>🎯 Kritik testler (sırayla tek tek dene)</h2>
+<div class="crit" id="crit"></div>
+
+<div class="toolbar">
+  <button onclick="scanEnv()">Ortam + köprü tara</button>
+  <button onclick="exportAll()">Durumu kopyala</button>
+  <button class="reset" onclick="clearAll()">Temizle</button>
+</div>
+
+<h2>Ortam</h2>
+<pre id="env">taranmadı</pre>
+
+<h2>Motor sürümü & risk</h2>
+<pre id="engine">taranmadı</pre>
+
+<h2>Olası JS köprüleri (addJavascriptInterface)</h2>
+<pre id="bridges">taranmadı</pre>
+
+<h2>Şema matrisi</h2>
+<table id="schemes"><thead><tr><th>URI</th><th>Dene</th><th>Sonuç</th></tr></thead><tbody></tbody></table>
+
+<h2>Native yüzey testleri</h2>
+<div class="row">
+  <div>Dosya seçici: <button onclick="fileProbe()" style="padding:6px 10px;border:none;border-radius:6px;background:#37474f;color:#fff;cursor:pointer;">&lt;input type=file&gt; aç</button> <span id="fileSt" class="st idle">bekliyor</span></div>
+  <div style="margin-top:8px;">İndirme: <a href="data:text/plain,togg-probe" download="togg_probe.txt" id="dlProbe" style="color:#9fd6ff;">data: indir</a> <span id="dlSt" class="st idle">bekliyor</span></div>
+  <div style="margin-top:8px;">window.open: <button onclick="openProbe()" style="padding:6px 10px;border:none;border-radius:6px;background:#37474f;color:#fff;cursor:pointer;">aç</button> <span id="openSt" class="st idle">bekliyor</span></div>
+  <div style="margin-top:8px;">file:// okuma: <button onclick="fileRead()" style="padding:6px 10px;border:none;border-radius:6px;background:#37474f;color:#fff;cursor:pointer;">fetch dene</button> <span id="freadSt" class="st idle">bekliyor</span></div>
+</div>
+<pre id="fileOut">taranmadı</pre>
+
+<h2>Log</h2>
+<div id="log"></div>
+
+<input type="file" id="fileInput" style="display:none">
+
+<script>
+var CRIT = [
+  {id:'c_aa', uri:'android-app://com.android.settings',                   note:'BROWSABLE şartından muaf → Chrome/Custom Tab ise AYARLAR açılır'},
+  {id:'c_sett', uri:'intent://settings/#Intent;action=android.settings.SETTINGS;launchFlags=0x10000000;end', note:'düzeltilmiş intent:// (Ayarlar)'},
+  {id:'c_dev', uri:'intent://dev/#Intent;action=android.settings.APPLICATION_DEVELOPMENT_SETTINGS;launchFlags=0x10000000;end', note:'Geliştirici Seçenekleri (USB debugging)'},
+  {id:'c_link', uri:'https://superapp-api.channels.togg.cloud/Settings', note:'Togg app-link (autoVerify) → native uygulama'}
+];
+
+var SCHEMES = [
+  {g:'🎯 Kritik',        id:'s_aa',   uri:'android-app://com.android.settings'},
+  {g:'🎯 Kritik',        id:'s_sett', uri:'intent://settings/#Intent;action=android.settings.SETTINGS;end'},
+  {g:'🎯 Kritik',        id:'s_dev',  uri:'intent://dev/#Intent;action=android.settings.APPLICATION_DEVELOPMENT_SETTINGS;end'},
+  {g:'🎯 Kritik',        id:'s_link', uri:'https://superapp-api.channels.togg.cloud/Settings'},
+  {g:'🎯 Kritik',        id:'s_tr',   uri:'trumore-superapp://custom/redirection/'},
+  {g:'Togg app',         id:'s_ins',  uri:'insidertogg://'},
+  {g:'Togg app',         id:'s_map',  uri:'https://maps.app.goo.gl/'},
+  {g:'Native (genelde ✗)',id:'s_plain',uri:'intent:#Intent;action=android.settings.SETTINGS;end'},
+  {g:'Native (genelde ✗)',id:'s_file1',uri:'file:///sdcard/'},
+  {g:'Native (genelde ✗)',id:'s_file2',uri:'file:///data/local/tmp/'},
+  {g:'Native (genelde ✗)',id:'s_cont', uri:'content://settings/'},
+  {g:'Native (genelde ✗)',id:'s_mkt',  uri:'market://details?id=com.android.settings'},
+  {g:'Native (genelde ✗)',id:'s_chr',  uri:'chrome://version'},
+  {g:'Kontrol (beklenen ✓)',id:'s_http',uri:'https://example.com'},
+  {g:'Kontrol (beklenen ✓)',id:'s_tel', uri:'tel:112'},
+  {g:'Kontrol (beklenen ✓)',id:'s_mail',uri:'mailto:probe@example.com'}
+];
+var METHODS = ['link','href','open','iframe'];
+var results = {};
+
+function log(msg){
+  var el = document.getElementById('log');
+  var ts = new Date().toISOString().substr(11,8);
+  el.textContent += '[' + ts + '] ' + msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+function setStatus(key, st, txt){
+  results[key] = {status:st, txt:txt||''};
+  var el = document.getElementById('st_' + key) || document.getElementById(key + 'St');
+  if(el){ el.className = 'st ' + st; el.textContent = txt || st; }
+}
+
+var RISK_HI = ['loadurl','open','startactivity','exec','shell','run','install','launch','intent','cmd','command','process','eval','javascript','invoke','call','send','post','write','delete','remove','wifi','adb','settings','system','file','download','upload','put'];
+var RISK_MID = ['get','read','info','data','token','device','version','id','list','query'];
+function riskOf(name){
+  var n = String(name).toLowerCase();
+  for(var i=0;i<RISK_HI.length;i++){ if(n.indexOf(RISK_HI[i]) >= 0) return 'HIGH'; }
+  for(var j=0;j<RISK_MID.length;j++){ if(n.indexOf(RISK_MID[j]) >= 0) return 'MID'; }
+  return 'LOW';
+}
+
+function engineRisk(ua){
+  var m = /Chrome\/(\d+)\./.exec(ua);
+  var v = m ? parseInt(m[1],10) : null;
+  if(v === null) return {v:null, cls:'try', txt:'Chromium sürümü UA\'da yok (WebView/gizli olabilir)'};
+  if(v < 90)  return {v:v, cls:'bad', txt:'ESKİ (Chrome/' + v + ') → V8/WebView CVE (RCE zinciri) araştır'};
+  if(v < 110) return {v:v, cls:'try', txt:'ORTA (Chrome/' + v + ') → sürüme özel CVE olabilir'};
+  return {v:v, cls:'ok', txt:'GÜNCEL (Chrome/' + v + ') → motor-CVE olasılığı düşük; köprü/file erişimine odaklan'};
+}
+
+var FILE_PATHS = [
+  'file:///proc/version',
+  'file:///etc/hosts',
+  'file:///sdcard/',
+  'file:///data/local/tmp/',
+  'file:///data/data/com.togg.toggmobile/shared_prefs/'
+];
+function fileRead(){
+  var out = document.getElementById('fileOut');
+  out.textContent = '';
+  setStatus('fread','try','deneniyor');
+  var done = 0, okAny = false;
+  function finish(){ done++; if(done >= FILE_PATHS.length){ setStatus('fread', okAny?'ok':'bad', okAny?'OKUNDU':'bloklandı'); } }
+  FILE_PATHS.forEach(function(p){
+    out.textContent += p + ' → ';
+    try{
+      fetch(p, {method:'GET'}).then(function(r){ return r.text(); }).then(function(t){
+        okAny = true;
+        out.textContent += 'OKUNDU (' + t.length + 'B): ' + t.substr(0,60).replace(/\s+/g,' ') + '\n';
+        finish();
+      }).catch(function(e){
+        out.textContent += 'bloklandı (' + (e && e.message ? e.message : 'hata') + ')\n'; finish();
+      });
+    }catch(e){ out.textContent += 'hata: ' + e.message + '\n'; finish(); }
+  });
+}
+
+function verdict(ua){
+  if(/;\s*wv\)/.test(ua)) return {c:'bad', t:'PLAIN WEBVIEW',
+    s:'intent:// · android-app:// · app-link ÇÖZÜLMEZ. Tarayıcı-native vektörler ÖLÜ → js-köprüsü / file-erisimi testlerine ve Faz 1-2 (fiziksel) yönüne geç.'};
+  if(/Chrome\/|CriOS/.test(ua)) return {c:'ok', t:'CHROME / CUSTOM TAB',
+    s:'intent:// ve android-app:// çalışabilir → aşağıdaki 🎯 Kritik testleri sırayla dene.'};
+  if(/WebView|;\s*wv|Version\/\d+\.\d+/.test(ua)) return {c:'try', t:'BELİRSİZ (olası WebView)',
+    s:'UA net değil; belirleyici olan 🎯 Kritik testlerin sonucudur.'};
+  return {c:'try', t:'BELİRSİZ', s:'UA tanınmadı; 🎯 Kritik testlere bak.'};
+}
+
+function showVerdict(ua){
+  var v = verdict(ua);
+  var box = document.getElementById('verdict');
+  box.className = v.c;
+  box.querySelector('.big').textContent = v.t;
+  box.querySelector('.why').textContent = v.s;
+  return v;
+}
+
+var pending = null;
+function armDetect(key, ms){
+  pending = key;
+  setTimeout(function(){
+    if(pending === key){ setStatus(key, 'bad', 'yanıt yok'); pending = null; }
+  }, ms || 1200);
+}
+document.addEventListener('visibilitychange', function(){
+  if(document.hidden && pending){
+    setStatus(pending, 'ok', 'native açıldı');
+    log('NATIVE AÇILDI: ' + pending); pending = null;
+  }
+});
+window.addEventListener('blur', function(){
+  if(pending){ setStatus(pending, 'ok', 'blur'); log('BLUR: ' + pending); pending = null; }
+});
+
+function withFallback(uri, key){
+  if(uri.indexOf('intent://') !== 0) return uri;
+  if(uri.indexOf('browser_fallback_url') >= 0) return uri;
+  var base = location.href.split('#')[0];
+  var fb = encodeURIComponent(base + '#nores=' + key);
+  return uri.replace(/end;?$/, 'S.browser_fallback_url=' + fb + ';end');
+}
+
+function invoke(uri, method, key){
+  setStatus(key, 'try', 'deneniyor');
+  armDetect(key);
+  var u = withFallback(uri, key);
+  try{
+    if(method === 'link'){
+      var a = document.createElement('a');
+      a.href = u; a.style.display='none';
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){ a.remove(); }, 500);
+    } else if(method === 'href'){
+      location.href = u;
+    } else if(method === 'open'){
+      var w = window.open(u, '_blank');
+      if(!w){ log('window.open null döndü (' + key + ')'); }
+    } else if(method === 'iframe'){
+      var f = document.createElement('iframe');
+      f.style.display='none'; f.src = u;
+      document.body.appendChild(f);
+      setTimeout(function(){ f.remove(); }, 800);
+    }
+  }catch(e){
+    setStatus(key, 'bad', 'hata: ' + e.message);
+    log('HATA ' + key + ': ' + e.message);
+  }
+}
+
+function renderCrit(){
+  var box = document.getElementById('crit');
+  CRIT.forEach(function(c){
+    var b = document.createElement('button');
+    b.innerHTML = c.uri + '<small>' + c.note + '</small>';
+    b.addEventListener('click', function(){ invoke(c.uri, 'link', c.id + ':link'); });
+    box.appendChild(b);
+    var s = document.createElement('div');
+    s.style.cssText = 'font-size:11px;margin:-4px 0 4px;';
+    s.innerHTML = '<span class="st idle" id="st_' + c.id + ':link"></span>';
+    box.appendChild(s);
+  });
+}
+
+function buildTable(){
+  var tb = document.querySelector('#schemes tbody');
+  tb.innerHTML = '';
+  var lastG = null;
+  SCHEMES.forEach(function(s){
+    if(s.g !== lastG){
+      lastG = s.g;
+      var gr = document.createElement('tr'); gr.className = 'grp';
+      var gc = document.createElement('td'); gc.colSpan = 3; gc.textContent = s.g;
+      gr.appendChild(gc); tb.appendChild(gr);
+    }
+    var tr = document.createElement('tr');
+    var td1 = document.createElement('td');
+    td1.className = 'uri'; td1.textContent = s.uri;
+    var td2 = document.createElement('td');
+    var acts = document.createElement('div'); acts.className = 'acts';
+    METHODS.forEach(function(m){
+      var b = document.createElement('button');
+      b.textContent = m;
+      b.addEventListener('click', function(){ invoke(s.uri, m, s.id + ':' + m); });
+      acts.appendChild(b);
+    });
+    td2.appendChild(acts);
+    var td3 = document.createElement('td');
+    METHODS.forEach(function(m){
+      var sp = document.createElement('span');
+      sp.className = 'st idle'; sp.id = 'st_' + s.id + ':' + m;
+      td3.appendChild(sp); td3.appendChild(document.createTextNode(' '));
+    });
+    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+    tb.appendChild(tr);
+  });
+}
+
+function scanEnv(){
+  var e = {};
+  e.href = location.href;
+  e.userAgent = navigator.userAgent;
+  e.platform = navigator.platform;
+  e.vendor = navigator.vendor || '';
+  e.language = navigator.language;
+  e.dpr = window.devicePixelRatio;
+  e.screen = screen.width + 'x' + screen.height;
+  e.viewport = window.innerWidth + 'x' + window.innerHeight;
+  e.standalone = (window.navigator.standalone === true);
+  e.verdict = showVerdict(navigator.userAgent).t;
+  var er = engineRisk(navigator.userAgent);
+  e.engine = (er.v !== null ? 'Chrome/' + er.v : 'bilinmiyor') + ' — ' + er.txt;
+  var enEl = document.getElementById('engine');
+  enEl.textContent = e.engine;
+  enEl.style.color = er.cls === 'bad' ? '#ff6b6b' : (er.cls === 'ok' ? '#69f0ae' : '#4fc3f7');
+  document.getElementById('env').textContent = JSON.stringify(e, null, 2);
+  log('ortam tarandı → ' + e.verdict + ' | motor: ' + e.engine);
+
+  var defaults = null;
+  try{
+    var f = document.createElement('iframe');
+    f.style.display = 'none';
+    document.body.appendChild(f);
+    defaults = new Set(Object.getOwnPropertyNames(f.contentWindow));
+    f.remove();
+  }catch(err){ log('iframe baseline yok: ' + err.message); }
+
+  var candidates = ['Android','JsBridge','jsBridge','nativeBridge','AndroidBridge','bridge','appInterface','togg','Togg','native','Native','webkit','chrome','__bridge__','AndroidInterface','jsInterface'];
+  var found = [];
+  var names;
+  try{ names = Object.getOwnPropertyNames(window); }catch(err){ names = []; }
+  names.forEach(function(k){
+    var isCandidate = candidates.indexOf(k) !== -1;
+    var injected = defaults ? !defaults.has(k) : isCandidate;
+    if(!isCandidate && !injected) return;
+    if(['window','document','location','navigator','top','self','frames','parent'].indexOf(k) !== -1) return;
+    var v; try{ v = window[k]; }catch(err){ return; }
+    var rec = {name:k, injected:injected};
+    if(typeof v === 'function'){ rec.type='function'; rec.fn=v.name||''; }
+    else if(v && typeof v === 'object'){
+      rec.type='object';
+      try{ rec.ctor = v.constructor && v.constructor.name; }catch(err){}
+      var ms = [];
+      try{ Object.getOwnPropertyNames(v).forEach(function(m){ try{ if(typeof v[m]==='function') ms.push({m:m, r:riskOf(m)}); }catch(err){} }); }catch(err){}
+      rec.methods = ms;
+      rec.danger = ms.filter(function(x){ return x.r === 'HIGH'; }).length;
+    } else { rec.type = typeof v; }
+    found.push(rec);
+  });
+  document.getElementById('bridges').textContent = found.length ? JSON.stringify(found, null, 2) : 'enjekte köprü bulunamadı (varsayılan pencerede ' + (defaults?defaults.size:'?') + ' özellik)';
+  log('köprü taraması: ' + found.length + ' aday' + (found.some(function(r){return r.danger;}) ? ' — YÜKSEK RİSKLİ METOT VAR' : ''));
+}
+
+var fileArmed = false;
+function fileProbe(){
+  var inp = document.getElementById('fileInput');
+  fileArmed = true;
+  setStatus('file', 'try', 'açılıyor');
+  armDetect('file', 1500);
+  try{ inp.click(); }catch(e){ setStatus('file','bad','hata: '+e.message); }
+}
+document.getElementById('fileInput').addEventListener('change', function(ev){
+  var f = ev.target.files && ev.target.files[0];
+  if(f){ setStatus('file','ok','seçildi: ' + f.name); log('DOSYA SEÇİLDİ: ' + f.name + ' (' + f.size + 'B)'); }
+});
+document.getElementById('fileInput').addEventListener('cancel', function(){ if(fileArmed){ log('dosya seçici iptal'); } });
+
+document.getElementById('dlProbe').addEventListener('click', function(){
+  setStatus('dl','try','deneniyor'); armDetect('dl', 1500);
+});
+function openProbe(){
+  setStatus('open','try','deneniyor'); armDetect('open', 1200);
+  var w = window.open('https://example.com', '_blank');
+  if(w){ setStatus('open','ok','pencere açıldı'); log('window.open AKTİF'); }
+  else { log('window.open null'); }
+}
+
+function exportAll(){
+  var payload = {env: document.getElementById('env').textContent, engine: document.getElementById('engine').textContent, bridges: document.getElementById('bridges').textContent, fileRead: document.getElementById('fileOut').textContent, results: results, log: document.getElementById('log').textContent};
+  var txt = JSON.stringify(payload, null, 2);
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(function(){ alert('Kopyalandı'); }, function(){ alert(txt); });
+  } else { alert(txt); }
+}
+
+function clearAll(){
+  results = {}; document.getElementById('log').textContent = '';
+  document.getElementById('env').textContent = 'taranmadı';
+  document.getElementById('engine').textContent = 'taranmadı';
+  document.getElementById('engine').style.color = '';
+  document.getElementById('bridges').textContent = 'taranmadı';
+  document.getElementById('fileOut').textContent = 'taranmadı';
+  document.querySelectorAll('.st').forEach(function(el){ el.className='st idle'; el.textContent=''; });
+}
+
+renderCrit();
+buildTable();
+showVerdict(navigator.userAgent);
+window.addEventListener('load', function(){
+  scanEnv();
+  var m = /nores=([^&]+)/.exec(location.hash || '');
+  if(m){
+    var key = decodeURIComponent(m[1]);
+    setTimeout(function(){ setStatus(key, 'bad', 'fallback → işlenmedi'); log('FALLBACK: ' + key + ' işlenmedi'); }, 250);
+  }
+});
+</script>
+</body>
+</html>

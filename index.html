@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Togg IVI Öncelikli Bypass Paneli</title>
+<style>
+  :root{
+    --bg:#111a24; --fg:#fff; --muted:#b0bec5;
+    --target:#00c853; --link:#00897b; --high:#0288d1; --mid:#546e7a; --low:#455a64; --lowest:#b71c1c;
+    --card:#1c2d3d; --accent:#ffca28;
+  }
+  *{box-sizing:border-box;}
+  body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;text-align:center;padding:20px;background:var(--bg);color:var(--fg);margin:0;}
+  h1{color:#00e5ff;font-size:22px;margin:0 0 4px;}
+  p.sub{font-size:13px;color:var(--muted);margin:0 0 10px;}
+  .env{font-size:11px;color:#7e8fa0;max-width:340px;margin:0 auto 14px;word-break:break-all;line-height:1.5;white-space:pre-line;text-align:left;}
+  .toolbar{max-width:340px;margin:0 auto 16px;display:flex;gap:8px;}
+  .toolbar button{flex:1;padding:9px;border:none;border-radius:8px;background:#263849;color:#fff;font-size:12px;font-weight:bold;cursor:pointer;}
+  .toolbar button:focus-visible{outline:2px solid var(--accent);}
+  .toolbar button.reset{background:#4a1d1d;}
+  .section-title{font-size:13px;font-weight:bold;color:var(--accent);text-align:left;margin:22px auto 6px;max-width:340px;text-transform:uppercase;border-bottom:2px solid var(--accent);padding-bottom:3px;}
+  .section-title small{display:block;font-size:10px;font-weight:normal;color:var(--muted);text-transform:none;margin-top:2px;}
+  .row{max-width:340px;margin:8px auto;background:var(--card);border-radius:10px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,.4);}
+  .btn{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:13px 14px;font-size:14px;font-weight:bold;color:#fff;text-align:left;text-decoration:none;}
+  .btn:focus-visible{outline:2px solid #fff;outline-offset:-2px;}
+  .tier-target{background:var(--target);}
+  .tier-link{background:var(--link);}
+  .tier-high{background:var(--high);}
+  .tier-mid{background:var(--mid);}
+  .tier-low{background:var(--low);}
+  .tier-lowest{background:var(--lowest);}
+  .badge{font-size:9px;font-weight:normal;opacity:.85;border:1px solid rgba(255,255,255,.4);border-radius:4px;padding:0 4px;white-space:nowrap;}
+  .status{font-size:11px;font-weight:normal;opacity:.9;white-space:nowrap;}
+  .note-wrap{padding:6px 12px 10px;background:rgba(0,0,0,.15);}
+  .note{width:100%;font-size:12px;padding:6px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:#0d151d;color:#fff;}
+  .note::placeholder{color:#5f7182;}
+</style>
+</head>
+<body>
+
+<h1>Togg IVI Öncelikli Bypass Paneli</h1>
+<p class="sub">Sırayla dene — her denemenin sonucu otomatik işaretlenir, notlarını yazabilirsin.</p>
+<div class="env" id="env"></div>
+
+<div class="toolbar">
+  <button onclick="exportState()">📋 Durumu kopyala</button>
+  <button class="reset" onclick="resetState()">↺ Sıfırla</button>
+</div>
+
+<div id="app"></div>
+
+<script>
+// ÖNEMLİ — Chrome/Custom Tab "intent://" kısıtı (developer.chrome.com/docs/android/intents):
+//  - Doğru form: intent://HOST/#Intent;...;end  (slashsız "intent:" yok sayılır)
+//  - Chrome YALNIZCA android.intent.category.BROWSABLE olan aktiviteleri çağırır.
+//    Çoğu Settings aktivitesi BROWSABLE DEĞİL → intent:// Ayarlar için genelde ✗.
+//  - Gerçekten çalışan vektörler: BROWSABLE+autoVerify kayıtlı app-link (https) ve
+//    özel şema (trumore-superapp://) + android-app://<paket> başlatıcıları.
+const ITEMS = [
+  // ---------- 🎯 Hedef: native uygulama başlatıcıları (BROWSABLE şartı yok) ----------
+  {id:101, tier:'target', kind:'android-app', package:'com.android.settings',      label:'Ayarlar uygulamasını başlat', hint:'android-app://com.android.settings → Settings MAIN/LAUNCHER aktivitesi; intent:// KISITINDAN muaf.'},
+  {id:102, tier:'target', kind:'android-app', package:'com.android.vending',       label:'Play Store başlat', hint:'Play kuruluysa açılır; mağazadan uygulama sayfası/ayar yüzeyi.'},
+  {id:103, tier:'target', kind:'android-app', package:'com.togg.toggmobile',       label:'Togg SuperApp başlat', hint:'Head-unit\'te Togg app kuruluysa doğrudan açar.'},
+  {id:104, tier:'target', kind:'android-app', package:'com.google.android.gms',    label:'GMS/Google ayar yüzeyi', hint:'GMS kuruluysa çeşitli google.* aktiviteleri.'},
+
+  // ---------- 🔗 Uygulama deep-link (manifest: BROWSABLE + autoVerify) ----------
+  {id:121, tier:'link', kind:'url',    url:'https://superapp-api.channels.togg.cloud/Settings',      label:'Togg app-link /Settings', hint:'Manifest doğrulanmış app-link (autoVerify) → Togg app içi Settings rotası.'},
+  {id:122, tier:'link', kind:'url',    url:'https://superapp-api.channels.togg.cloud/Configuration', label:'Togg app-link /Configuration', hint:'Uygulama yapılandırma rotası.'},
+  {id:123, tier:'link', kind:'url',    url:'https://superapp-api.channels.togg.cloud/OwnersManual',  label:'Togg app-link /OwnersManual', hint:'Kullanım kılavuzu (WebView içi/asset olabilir).'},
+  {id:124, tier:'link', kind:'scheme', schemeUrl:'trumore-superapp://custom/redirection/Home',       label:'Şema: trumore-superapp Home', hint:'BROWSABLE kayıtlı özel şema → Togg app deep link.'},
+  {id:125, tier:'link', kind:'intent', scheme:'trumore-superapp', package:'com.togg.toggmobile', action:'android.intent.action.VIEW', label:'intent:// trumore-superapp', hint:'BROWSABLE şema + paket → Chrome intent:// ile native çağrı.'},
+  {id:126, tier:'link', kind:'url',    url:'https://play.google.com/store/apps/details?id=com.android.settings', label:'Play: Settings sayfası', hint:'Play app detail yüzeyi (kuruluysa Aç).'},
+
+  // ---------- ⭐ Seviye 1 ----------
+  {id:1, tier:'high', kind:'intent', action:'android.settings.USER_DICTIONARY_SETTINGS', label:'Klavye / Sözlük Ayarları', hint:'En çok unutulan açık; arama ikonundan sisteme sızılabilir.'},
+  {id:2, tier:'high', kind:'intent', action:'android.settings.BACKUP_AND_RESET_SETTINGS', label:'Yedekleme ve Sıfırlama', hint:'Servis personeli için açık bırakılan menü.'},
+  {id:3, tier:'high', kind:'intent', action:'com.google.android.gms.settings.GOOGLE_SETTINGS', label:'Google Hesap Ayarları', hint:'GMS kurulu değilse resolve olmaz.'},
+  {id:4, tier:'high', kind:'intent', action:'android.settings.SYNC_SETTINGS', label:'Hesap Senkronizasyon Menüsü'},
+
+  // ---------- ⚡ Seviye 2 ----------
+  {id:5,  tier:'mid', kind:'intent', action:'android.settings.WIFI_SETTINGS', label:'Wi-Fi Ayarlarını Aç'},
+  {id:6,  tier:'mid', kind:'intent', action:'android.settings.BLUETOOTH_SETTINGS', label:'Bluetooth Ayarlarını Aç'},
+  {id:7,  tier:'mid', kind:'intent', action:'android.settings.WIRELESS_SETTINGS', label:'Diğer Kablosuz Ağlar'},
+  {id:8,  tier:'mid', kind:'intent', action:'android.settings.VPN_SETTINGS', label:'VPN Ayarlarını Aç'},
+  {id:17, tier:'mid', kind:'intent', action:'android.settings.ACCESSIBILITY_SETTINGS', label:'Erişilebilirlik Ayarları', hint:'Erişilebilirlik servisleri / uzak ADB yardımcıları için ortam.'},
+  {id:18, tier:'mid', kind:'intent', action:'android.settings.APPLICATION_SETTINGS', label:'Uygulama Ayarları (Apps)', hint:'Paket listesi + diag APK arama.'},
+  {id:19, tier:'mid', kind:'intent', action:'android.settings.INPUT_METHOD_SETTINGS', label:'Girdi Yöntemleri (Klavye)', hint:'Klavye etkinleştir → arama ikonu ile sistem uygulamalarına in.'},
+
+  // ---------- ⚠️ Seviye 3 ----------
+  {id:9,  tier:'low', kind:'intent', action:'android.settings.INTERNAL_STORAGE_SETTINGS', label:'Hafıza / Depolama Ayarları', hint:'Açılırsa yerel Dosya Yöneticisine yönlendirir.'},
+  {id:10, tier:'low', kind:'intent', action:'android.settings.SECURITY_SETTINGS', label:'Güvenlik Ayarları'},
+  {id:11, tier:'low', kind:'intent', action:'android.settings.PRIVACY_SETTINGS', label:'Gizlilik Ayarları'},
+  {id:20, tier:'low', kind:'intent', action:'android.settings.DATE_SETTINGS', label:'Tarih ve Saat Ayarları'},
+  {id:21, tier:'low', kind:'intent', action:'android.settings.DISPLAY_SETTINGS', label:'Ekran Ayarları'},
+  {id:22, tier:'low', kind:'intent', action:'android.settings.SOUND_SETTINGS', label:'Ses Ayarları'},
+  {id:23, tier:'low', kind:'intent', action:'android.settings.LOCALE_SETTINGS', label:'Dil ve Bölge Ayarları'},
+
+  // ---------- 🚫 Seviye 4 ----------
+  {id:12, tier:'lowest', kind:'intent', action:'android.settings.MANAGE_ALL_APPLICATIONS_SETTINGS', label:'Tüm Uygulamalar Listesi'},
+  {id:13, tier:'lowest', kind:'intent', action:'android.settings.DEVICE_INFO_SETTINGS', label:'Cihaz Hakkında Menüsü'},
+  {id:14, tier:'lowest', kind:'intent', action:'android.settings.APPLICATION_DEVELOPMENT_SETTINGS', label:'Geliştirici Seçenekleri (action)'},
+  {id:15, tier:'lowest', kind:'intent', action:'android.settings.DEVELOPER_OPTIONS_SETTINGS', label:'Geliştirici Seçenekleri (Yol B)'},
+  {id:16, tier:'lowest', kind:'intent', action:'android.settings.SETTINGS', label:'Ana Ayarları Zorla'},
+  {id:24, tier:'lowest', kind:'intent', action:'android.settings.TETHER_SETTINGS', label:'Tethering / Mobil Erişim', hint:'Hotspot; Wi-Fi ADB için ağ ortamı (portlar yine kapalı).'},
+  {id:25, tier:'lowest', kind:'intent', action:'android.provider.action.DOCUMENT_SETTINGS', label:'Dosya Yöneticisi (Depolama)'},
+  {id:26, tier:'lowest', kind:'intent', action:'android.settings.SECURITY_UPDATE_SETTINGS', label:'Güvenlik Güncelleme'},
+
+  // ---------- 🎯 Geliştirici Seçenekleri (bileşen yolları — intent:// BROWSABLE kısıtlı) ----------
+  {id:105, tier:'target2', kind:'intent', component:'com.android.settings/.Settings$DevelopmentSettingsDashboardActivity', label:'Geliştirici (bileşen A)', hint:'AOSP dashboard rotası. BROWSABLE değilse intent:// ✗ — android-app:// ile Ayarlar aç, oradan ilerle.'},
+  {id:106, tier:'target2', kind:'intent', component:'com.android.settings/.development.DevelopmentSettingsDashboardActivity', label:'Geliştirici (bileşen B)', hint:'Android 10+ dashboard yolu.'},
+  {id:107, tier:'target2', kind:'intent', component:'com.android.settings/.DevelopmentSettingsDashboardActivity', label:'Geliştirici (bileşen C)', hint:'Eski/tek-aktivite varyantı.'},
+  {id:108, tier:'target2', kind:'intent', component:'com.android.settings/.Settings', label:'Ana Ayarlar (bileşen)'},
+  {id:109, tier:'target2', kind:'intent', component:'com.android.settings/.applications.ManageApplications', label:'Uygulamalar (bileşen)', hint:'Diag/servis APK paket adını görmek için.'},
+  {id:110, tier:'target2', kind:'intent', component:'com.android.settings/.password.ChooseLockGeneric', label:'Ekran Kilidi (bileşen)', hint:'Yeni PIN/kilit ekranı; çıkış yüzeyi olabilir.'},
+];
+
+const TIER_LABEL = {
+  target:  {t:'🎯 Hedef: native başlatıcılar', s:'BROWSABLE şartı yok — en yüksek ihtimal.'},
+  link:    {t:'🔗 Uygulama deep-link', s:'BROWSABLE+autoVerify kayıtlı app-link / özel şema.'},
+  high:    {t:'⭐ Seviye 1: En Yüksek İhtimal', s:''},
+  mid:     {t:'⚡ Seviye 2: Orta İhtimal', s:''},
+  low:     {t:'⚠️ Seviye 3: Düşük İhtimal', s:''},
+  lowest:  {t:'🚫 Seviye 4: En Düşük İhtimal', s:''},
+  target2: {t:'🧩 Bileşen yolu (intent://)', s:'Chrome BROWSABLE kısıtına tabi — çoğu ✗ beklenir.'},
+};
+
+const KIND_BADGE = { 'intent':'intent://', 'android-app':'app://', 'url':'app-link', 'scheme':'şema' };
+
+const STORE_KEY = 'togg_bypass_state_v1';
+
+function loadState(){
+  try{ return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
+  catch(e){ return {}; }
+}
+function saveState(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+  catch(e){ /* depolama yoksa sessizce yut */ }
+}
+let state = loadState();
+
+function statusLabel(s){
+  if(!s || !s.status) return '';
+  if(s.status==='success') return '✓ açıldı';
+  if(s.status==='fail')    return '✗ yanıt yok';
+  if(s.status==='trying')  return '… deneniyor';
+  return '';
+}
+
+function enc(s){ return encodeURIComponent(s); }
+
+function hrefFor(it){
+  if(it.kind === 'android-app') return 'android-app://' + it.package + '/';
+  if(it.kind === 'url')         return it.url;
+  if(it.kind === 'scheme')      return it.schemeUrl;
+  // kind === 'intent'
+  const base = location.href.split('#')[0];
+  const fb   = enc(base + '#nores=' + it.id);
+  let q = '';
+  if(it.component) q += 'component=' + it.component + ';';
+  if(it.package)   q += 'package=' + it.package + ';';
+  if(it.action)    q += 'action=' + it.action + ';';
+  if(it.scheme)    q += 'scheme=' + it.scheme + ';';
+  q += 'launchFlags=0x10000000;';
+  q += 'S.browser_fallback_url=' + fb + ';';
+  const host = it.component ? it.component.split('/')[0] : 'x';
+  return 'intent://' + host + '/#Intent;' + q + 'end';
+}
+
+function render(){
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  let lastTier = null;
+  ITEMS.forEach(item=>{
+    if(item.tier !== lastTier){
+      const cfg = TIER_LABEL[item.tier] || {t:item.tier, s:''};
+      const h = document.createElement('div');
+      h.className = 'section-title';
+      h.innerHTML = cfg.t + (cfg.s ? '<small>' + cfg.s + '</small>' : '');
+      app.appendChild(h);
+      lastTier = item.tier;
+    }
+    const s = state[item.id] || {};
+
+    const row = document.createElement('div');
+    row.className = 'row';
+
+    const a = document.createElement('a');
+    a.className = 'btn tier-' + item.tier;
+    a.href = hrefFor(item);
+    a.innerHTML = `<span>${item.id}. ${item.label} <span class="badge">${KIND_BADGE[item.kind]||item.kind}</span></span><span class="status" id="status-${item.id}">${statusLabel(s)}</span>`;
+    a.addEventListener('click', ()=> onTry(item.id));
+    row.appendChild(a);
+
+    const noteWrap = document.createElement('div');
+    noteWrap.className = 'note-wrap';
+    const note = document.createElement('input');
+    note.className = 'note';
+    note.placeholder = item.hint || 'not ekle...';
+    note.value = s.note || '';
+    note.addEventListener('input', ()=>{
+      state[item.id] = {...(state[item.id]||{}), note: note.value};
+      saveState();
+    });
+    noteWrap.appendChild(note);
+    row.appendChild(noteWrap);
+
+    app.appendChild(row);
+  });
+}
+
+function onTry(id){
+  state[id] = {...(state[id]||{}), status:'trying', lastTried: Date.now()};
+  saveState();
+  updateStatus(id);
+  setTimeout(()=>{
+    if(document.hidden){
+      state[id] = {...(state[id]||{}), status:'success'};
+    } else if((state[id]||{}).status === 'trying'){
+      state[id] = {...(state[id]||{}), status:'fail'};
+    }
+    saveState();
+    updateStatus(id);
+  }, 900);
+}
+
+function updateStatus(id){
+  const el = document.getElementById('status-' + id);
+  if(el) el.textContent = statusLabel(state[id]);
+}
+
+(function envInfo(){
+  const ua = navigator.userAgent || '';
+  const wv = /\bwv\b/.test(ua) ? 'WebView' : (/Chrome\//.test(ua) ? 'Chrome/CustomTab?' : '?');
+  document.getElementById('env').textContent =
+    'Ortam: ' + wv + '\nUA: ' + ua;
+})();
+
+(function checkFallback(){
+  const m = location.hash.match(/nores=(\d+)/);
+  if(m){
+    const id = m[1];
+    state[id] = {...(state[id]||{}), status:'fail'};
+    saveState();
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+})();
+
+document.addEventListener('visibilitychange', ()=>{
+  if(!document.hidden){
+    let changed = false;
+    Object.keys(state).forEach(id=>{
+      if(state[id].status === 'trying'){
+        state[id].status = 'success';
+        changed = true;
+      }
+    });
+    if(changed){ saveState(); render(); }
+  }
+});
+
+function resetState(){
+  if(confirm('Tüm işaretlemeler ve notlar silinsin mi?')){
+    state = {};
+    saveState();
+    render();
+  }
+}
+
+function exportState(){
+  const ua = navigator.userAgent || '';
+  const txt = JSON.stringify({ua, state}, null, 2);
+  navigator.clipboard.writeText(txt).then(()=>{
+    alert('Durum panoya kopyalandı!');
+  }).catch(()=>{
+    alert('Kopyalanamadı: \n' + txt);
+  });
+}
+
+render();
+</script>
+</body>
+</html>
