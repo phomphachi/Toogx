@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>Togg IVI — Klavye / Seçim Testi</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="tabs">
+  <a href="index.html">🎯 Bypass Paneli</a>
+  <a href="probe.html">🔬 Ortam / WebView</a>
+  <a class="active" href="klavye.html">⌨️ Klavye / Seçim</a>
+</nav>
+
+<h1>⌨️ Klavye / Seçim Testi</h1>
+<p class="sub">Klavye açıkken <b>metin seçim menüsünü</b> (Kopyala / Paylaş / Asist / ⋮) ve <b>giriş gecikmesini</b> ölçer. Kiosk kilitliyse menü hiç çıkmaz.</p>
+
+<div class="stats">
+  <span>tuş <b id="cnt-keys">0</b></span>
+  <span>ort.gecikme <b id="cnt-lag">–</b> ms</span>
+  <span>seçim <b id="cnt-sel">0</b></span>
+</div>
+
+<div class="toolbar">
+  <button class="primary" onclick="focusInput()">⌨️ Klavyeyi aç</button>
+  <button onclick="selectAll()">Seç: tümü</button>
+  <button onclick="clearSel()">Seçimi bırak</button>
+  <button class="reset" onclick="clearAll()">↺ Temizle</button>
+</div>
+
+<div class="box">
+  <h3>1) Klavye girişi + seçim</h3>
+  <label>Metin alanı (dokun → klavye açılır)</label>
+  <input type="text" id="kbInput" value="togg test metni" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+
+  <label>Zengin alan (contenteditable — long-press seçim denemesi)</label>
+  <div id="ce" contenteditable="true" style="min-height:64px;padding:10px;border-radius:6px;border:1px solid #334;background:#0d151d;color:#fff;font-size:13px">buraya dokun, yaz, sonra parmağını basılı tut.</div>
+
+  <button onclick="selectAll()">Metni seç (setSelectionRange)</button>
+</div>
+
+<div class="box">
+  <h3>2) Gözlemini işaretle</h3>
+  <div class="toolbar" style="margin:0">
+    <button onclick="mark('seçim menüsü ÇIKTI','ok')">Seçim menüsü çıktı</button>
+    <button onclick="mark('seçim menüsü ÇIKMADI','fail')">Çıkmadı</button>
+    <button onclick="mark('Paylaş var','try')">Paylaş</button>
+    <button onclick="mark('Asist var','try')">Asist</button>
+    <button onclick="mark('Web Arama var','try')">Web Arama</button>
+    <button onclick="mark('⋮ üçnokta var','try')">⋮ menü</button>
+    <button onclick="mark('dişli (klavye ayarı) var','try')">Klavye dişli</button>
+  </div>
+</div>
+
+<div class="box">
+  <h3>3) Manuel geçiş yolları (parkta dene)</h3>
+  <div class="note" id="guide">
+1. Metne yaz → parmağını <b>uzun bas</b> → seçim menüsü. Sağa kaydır → <b>⋮</b>.
+2. Menüde <b>Paylaş / Asist / Web Arama</b> varsa: kiosk dışı bir uygulama açılır (pivot).
+3. Klavye üst barındaki <b>dişli</b> → klavye ayarları → geri + üst menü ile Dil ve Giriş'e sıçra.
+4. Üst<->alt kenardan <b>iki parmak</b> çek → Quick Settings (OEM yutuyorsa gelmez).
+5. Bildirime uzun bas → <b>Uygulama bilgisi</b> → sistem Ayarlar.
+6. Alttan yukarı → Recents/Home (gesture nav açık mı?).
+  </div>
+</div>
+
+<div class="box">
+  <h3>4) Ölçüm</h3>
+  <div class="note">Aşağıdaki log gerçek olayları kaydeder: odak/kayıp, seçim değişimi, tuş zamanları (gecikme), klavye açılış tahmini ve native pencereye geçiş.</div>
+</div>
+
+<h2 class="section-title">Olay kaydı</h2>
+<div class="log-box" id="log"></div>
+
+<footer>Ortam tipi için <a href="probe.html">🔬 Ortam</a> · vektörler için <a href="index.html">🎯 Bypass</a> · Kendi aracın, park hâlinde.</footer>
+
+<script src="common.js"></script>
+<script>
+var keyTimes = [], selCount = 0, keyCount = 0, lastKey = 0;
+
+function log(msg, type){
+  var el = ToggKit.$('log');
+  var ts = new Date().toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  var d = document.createElement('div');
+  if (type) d.className = 'log-' + type;
+  d.textContent = '[' + ts + '] ' + msg;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+function mark(txt, type){ log('İŞARET: ' + txt, type); }
+function median(a){
+  if (!a.length) return null;
+  var s = a.slice().sort(function(x,y){ return x-y; });
+  var m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : Math.round((s[m-1] + s[m]) / 2);
+}
+
+var input = ToggKit.$('kbInput');
+function focusInput(){ input.focus(); setTimeout(selectAll, 250); }
+function selectAll(){ try { input.focus(); input.setSelectionRange(0, input.value.length); log('setSelectionRange: tümü seçildi', 'try'); } catch (e){ log('seçim hatası: ' + e.message, 'fail'); } }
+function clearSel(){ try { input.setSelectionRange(input.value.length, input.value.length); log('seçim bırakıldı', 'try'); } catch (e){} }
+
+input.addEventListener('focus', function(){ log('input ODAK (klavye açıldı)', 'ok'); });
+input.addEventListener('blur',  function(){ log('input ODAK KAYBI', 'fail'); });
+input.addEventListener('beforeinput', function(e){ log('beforeinput: ' + (e.inputType || '?')); });
+input.addEventListener('keydown', function(e){
+  var now = performance.now();
+  keyCount++;
+  ToggKit.$('cnt-keys').textContent = keyCount;
+  if (lastKey){
+    var dt = Math.round(now - lastKey);
+    keyTimes.push(dt);
+    var md = median(keyTimes);
+    ToggKit.$('cnt-lag').textContent = md;
+    if (dt > 120) log('YAVAŞ tuş: ' + dt + ' ms (medyan ' + md + ')', 'fail');
+  }
+  lastKey = now;
+});
+input.addEventListener('input', function(){ log('metin değişti (' + input.value.length + ' karakter)'); });
+
+document.addEventListener('selectionchange', function(){
+  selCount++;
+  ToggKit.$('cnt-sel').textContent = selCount;
+  var sel = String(document.getSelection ? document.getSelection() : '').slice(0, 40);
+  log('selectionchange (#' + selCount + ') ' + (sel ? '→ "' + sel + '"' : ''));
+});
+['copy','cut','paste'].forEach(function(ev){
+  document.addEventListener(ev, function(){ log('CLIPBOARD: ' + ev, 'try'); });
+});
+input.addEventListener('contextmenu', function(){ log('contextmenu (uzun bas) tetiklendi', 'try'); });
+ToggKit.$('ce').addEventListener('contextmenu', function(){ log('contenteditable contextmenu', 'try'); });
+
+document.addEventListener('visibilitychange', function(){
+  log(document.hidden ? 'SAYFA GİZLENDİ → native pencere/klavye açıldı' : 'SAYFA GÖRÜNDÜ (geri döndü)', document.hidden ? 'ok' : 'try');
+});
+
+if (window.visualViewport){
+  var baseH = window.visualViewport.height;
+  window.visualViewport.addEventListener('resize', function(){
+    var h = window.visualViewport.height;
+    if (h < baseH - 60) log('KLAVYE AÇILDI tahmini (viewport ' + Math.round(h) + 'px)', 'ok');
+    baseH = h;
+  });
+}
+
+function clearAll(){
+  keyTimes = []; selCount = 0; keyCount = 0; lastKey = 0;
+  ToggKit.$('cnt-keys').textContent = '0';
+  ToggKit.$('cnt-lag').textContent = '–';
+  ToggKit.$('cnt-sel').textContent = '0';
+  ToggKit.$('log').innerHTML = '';
+}
+
+log('hazır — alana dokun ve klavyeyi aç', 'try');
+try { input.focus(); } catch (e) {}
+</script>
+</body>
+</html>

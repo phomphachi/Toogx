@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>Togg IVI — Bypass Paneli</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="tabs">
+  <a class="active" href="index.html">🎯 Bypass Paneli</a>
+  <a href="probe.html">🔬 Ortam / WebView</a>
+  <a href="klavye.html">⌨️ Klavye / Seçim</a>
+</nav>
+
+<h1>Togg IVI — Bypass Paneli</h1>
+<p class="sub">Kiosk WebView'inde native Ayarlar / app-link / şema yüzeylerini dener. Sonuç otomatik işaretlenir.</p>
+
+<div id="verdict" class="try"><div class="big">…</div><div class="why">ortam okunuyor</div></div>
+
+<div class="stats">
+  <span>✓ <b id="cnt-ok">0</b></span>
+  <span>✗ <b id="cnt-fail">0</b></span>
+  <span>… <b id="cnt-try">0</b></span>
+</div>
+
+<div class="toolbar">
+  <button class="primary" onclick="autoSequence()">▶ Otomatik</button>
+  <button class="fuzz" onclick="startFuzzFromList()">⚡ Fuzz (Liste)</button>
+  <button onclick="exportState()">📋 Kopyala</button>
+  <button class="reset" onclick="clearAll()">↺ Sıfırla</button>
+</div>
+
+<div id="app"></div>
+
+<div class="box">
+  <h3>Özel Intent (Action / Component / Package / Extra)</h3>
+
+  <label>Action (opsiyonel)</label>
+  <input type="text" id="c-action" placeholder="android.settings.SETTINGS" value="android.settings.SETTINGS">
+
+  <label>Component — örnek: com.android.settings/.Settings</label>
+  <input type="text" id="c-component" placeholder="com.android.settings/.Settings" value="">
+
+  <label>Package (opsiyonel — boşsa Component'ten türetilir)</label>
+  <input type="text" id="c-package" placeholder="com.android.settings" value="">
+
+  <label>Launch Flags</label>
+  <select id="c-flags">
+    <option value="">Flag yok</option>
+    <option value="0x10000000" selected>NEW_TASK (0x10000000)</option>
+    <option value="0x04000000">CLEAR_TOP (0x04000000)</option>
+    <option value="0x00008000">CLEAR_TASK (0x00008000)</option>
+    <option value="0x08000000">MULTIPLE_TASK (0x08000000)</option>
+    <option value="0x02000000">REORDER_TO_FRONT (0x02000000)</option>
+    <option value="0x00001000">LAUNCH_ADJACENT (0x00001000)</option>
+    <option value="0x20000000">EXCLUDE_FROM_RECENTS (0x20000000)</option>
+    <option value="0x10008000">NEW_TASK + CLEAR_TASK (0x10008000)</option>
+  </select>
+
+  <label>Extra Parametre</label>
+  <div class="row2">
+    <input type="text" id="c-extra-key" placeholder="Anahtar (örn: extra_prefs_show_button_bar)">
+    <input type="text" id="c-extra-val" placeholder="Değer (örn: true)">
+  </div>
+  <select id="c-extra-type" style="margin-top:6px">
+    <option value="S">String (S.)</option>
+    <option value="B" selected>Boolean (B.)</option>
+    <option value="i">Integer (i.)</option>
+    <option value="l">Long (l.)</option>
+  </select>
+
+  <button onclick="tryCustom()">Özel Intent'i Tetikle</button>
+  <button class="fuzz-btn" onclick="startFuzzCustom()">⚡ Fuzz Mode (Bu Intent)</button>
+</div>
+
+<div class="log-box" id="log"><div style="color:#607d8b">Deneme geçmişi burada görünecek…</div></div>
+
+<footer>
+  Ortam/kiosk tipini kesinleştirmek için <a href="probe.html">🔬 Ortam / WebView</a> sayfasını aç.<br>
+  Kendi aracın üzerinde, park hâlinde kullan.
+</footer>
+
+<script src="common.js"></script>
+<script>
+const ITEMS = [
+  {id:101, tier:'target', kind:'android-app', package:'com.android.settings', label:'Ayarlar uygulamasını başlat', hint:'android-app:// → Settings LAUNCHER; intent:// BROWSABLE kısıtından muaf.'},
+  {id:102, tier:'target', kind:'android-app', package:'com.android.vending',  label:'Play Store başlat', hint:'Play kuruluysa açılır.'},
+  {id:103, tier:'target', kind:'android-app', package:'com.togg.toggmobile',  label:'Togg SuperApp başlat', hint:'Head-unit\'te Togg app kuruluysa doğrudan açar.'},
+  {id:104, tier:'target', kind:'android-app', package:'com.google.android.gms', label:'GMS / Google yüzeyi', hint:'GMS kuruluysa google.* aktiviteleri.'},
+
+  {id:121, tier:'link', kind:'url',    url:'https://superapp-api.channels.togg.cloud/Settings',      label:'Togg app-link /Settings', hint:'Manifest autoVerify app-link → Togg app içi rota.'},
+  {id:122, tier:'link', kind:'url',    url:'https://superapp-api.channels.togg.cloud/Configuration', label:'Togg app-link /Configuration'},
+  {id:123, tier:'link', kind:'url',    url:'https://superapp-api.channels.togg.cloud/OwnersManual',  label:'Togg app-link /OwnersManual'},
+  {id:124, tier:'link', kind:'scheme', schemeUrl:'trumore-superapp://custom/redirection/Home',       label:'Şema: trumore-superapp', hint:'BROWSABLE kayıtlı özel şema → Togg app deep link.'},
+  {id:125, tier:'link', kind:'intent', scheme:'trumore-superapp', package:'com.togg.toggmobile', action:'android.intent.action.VIEW', label:'intent:// trumore-superapp', hint:'BROWSABLE şema + paket → Chrome intent:// ile native çağrı.'},
+
+  {id:1, tier:'high', kind:'intent', action:'android.settings.USER_DICTIONARY_SETTINGS', label:'Klavye / Sözlük Ayarları', flags:'0x10000000', hint:'Sistem overlay katmanı; arama ikonundan sisteme sızılabilir.'},
+  {id:2, tier:'high', kind:'intent', action:'android.settings.BACKUP_AND_RESET_SETTINGS', label:'Yedekleme ve Sıfırlama', flags:'0x10000000', hint:'Serviste açık bırakılan menü.'},
+  {id:3, tier:'high', kind:'intent', action:'android.settings.ACCESSIBILITY_SETTINGS',    label:'Erişilebilirlik', flags:'0x10000000', hint:'Erişilebilirlik servisleri / uzak yardımcılar.'},
+  {id:4, tier:'high', kind:'intent', action:'android.settings.APPLICATION_DEVELOPMENT_SETTINGS', label:'Geliştirici Seçenekleri', flags:'0x10000000', hint:'Geliştirici Seçenekleri → USB/Kablosuz hata ayıklama.'},
+
+  {id:5, tier:'mid', kind:'intent', action:'android.settings.SETTINGS',                    label:'Ana Ayarlar (split)', flags:'0x10008000', hint:'LAUNCH_ADJACENT ile bölünmüş pencere.'},
+  {id:6, tier:'mid', kind:'intent', action:'android.settings.NOTIFICATION_SETTINGS',       label:'Bildirim Ayarları', flags:'0x10000000'},
+  {id:7, tier:'mid', kind:'intent', action:'android.settings.WIFI_SETTINGS',               label:'Wi-Fi Ayarları', flags:'0x10000000'},
+  {id:8, tier:'mid', kind:'intent', action:'android.settings.BLUETOOTH_SETTINGS',          label:'Bluetooth Ayarları', flags:'0x10000000'},
+  {id:9, tier:'mid', kind:'intent', action:'android.settings.INPUT_METHOD_SETTINGS',       label:'Girdi Yöntemleri (Klavye)', flags:'0x10000000', hint:'Klavye etkinleştir → sistem uygulamalarına in.'},
+
+  {id:10, tier:'low', kind:'intent', action:'android.settings.APPLICATION_SETTINGS',        label:'Uygulama Listesi', flags:'0x10000000'},
+  {id:11, tier:'low', kind:'intent', action:'android.settings.INTERNAL_STORAGE_SETTINGS',   label:'Depolama / Dosyalar', flags:'0x10000000'},
+  {id:12, tier:'low', kind:'intent', action:'android.settings.SECURITY_SETTINGS',           label:'Güvenlik Ayarları', flags:'0x10000000'},
+  {id:13, tier:'low', kind:'intent', action:'android.settings.DISPLAY_SETTINGS',            label:'Ekran Ayarları', flags:'0x10000000'},
+  {id:14, tier:'low', kind:'intent', action:'android.settings.DATE_SETTINGS',               label:'Tarih ve Saat', flags:'0x10000000'},
+  {id:15, tier:'low', kind:'intent', action:'android.settings.LOCALE_SETTINGS',             label:'Dil ve Bölge', flags:'0x10000000'},
+  {id:16, tier:'low', kind:'intent', action:'android.settings.TETHER_SETTINGS',             label:'Tethering / Hotspot', flags:'0x10000000', hint:'Hotspot; kablosuz ADB için ağ ortamı (portlar ayrıca kapalı).'},
+];
+
+const TIER_LABEL = {
+  target:'🎯 Hedef: native başlatıcılar',
+  link:  '🔗 Uygulama deep-link',
+  high:  '⭐ Seviye 1 — Yüksek potansiyel',
+  mid:   '⚡ Seviye 2 — Orta',
+  low:   '⚠️ Seviye 3 — Düşük',
+};
+
+const KIND_BADGE = { intent:'intent://', 'android-app':'app://', url:'app-link', scheme:'şema' };
+
+const FUZZ_FLAGS = ['0x10000000','0x00008000','0x10008000','0x08000000','0x02000000','0x04000000','0x00001000','0x20000000'];
+const STORE_KEY = 'togg_bypass_v4';
+let state = {};
+let log = [];
+let autoRunning = false, fuzzRunning = false;
+
+try { state = JSON.parse(localStorage.getItem(STORE_KEY) || '{}') || {}; } catch (e) { state = {}; }
+
+function persist(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {} }
+function statusLabel(s){
+  if (!s || !s.status) return '';
+  if (s.status === 'success') return '✓ açıldı';
+  if (s.status === 'fail')    return '✗ yanıt yok';
+  if (s.status === 'trying')  return '… deneniyor';
+  return '';
+}
+function updateCounters(){
+  let ok=0, fail=0, trying=0;
+  Object.keys(state).forEach(function(k){
+    var s = state[k];
+    if (s.status === 'success') ok++;
+    else if (s.status === 'fail') fail++;
+    else if (s.status === 'trying') trying++;
+  });
+  ToggKit.$('cnt-ok').textContent = ok;
+  ToggKit.$('cnt-fail').textContent = fail;
+  ToggKit.$('cnt-try').textContent = trying;
+}
+function addLog(msg, type){
+  var time = new Date().toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  log.unshift({time:time, msg:msg, type:type || ''});
+  if (log.length > 60) log.pop();
+  ToggKit.$('log').innerHTML = log.map(function(l){
+    return '<div class="log-' + (l.type || '') + '">[' + l.time + '] ' + l.msg + '</div>';
+  }).join('');
+}
+function updateStatus(id){
+  var el = ToggKit.$('status-' + id);
+  if (el) el.textContent = statusLabel(state[id]);
+}
+
+function render(){
+  var app = ToggKit.$('app');
+  app.innerHTML = '';
+  var lastTier = null;
+  ITEMS.forEach(function(item){
+    if (item.tier !== lastTier){
+      var h = document.createElement('div');
+      h.className = 'section-title';
+      h.textContent = TIER_LABEL[item.tier] || item.tier;
+      app.appendChild(h);
+      lastTier = item.tier;
+    }
+    var s = state[item.id] || {};
+    var row = document.createElement('div');
+    row.className = 'row';
+
+    var btnRow = document.createElement('div');
+    btnRow.className = 'btn-row';
+
+    var a = document.createElement('a');
+    a.className = 'btn tier-' + item.tier;
+    a.href = ToggKit.hrefFor(item);
+    a.innerHTML = '<span>' + item.id + '. ' + item.label + ' <span class="badge">' + (KIND_BADGE[item.kind] || item.kind) + '</span></span>' +
+                  '<span class="status" id="status-' + item.id + '">' + statusLabel(s) + '</span>';
+    a.addEventListener('click', function(){ onTry(item.id, item.label); });
+    btnRow.appendChild(a);
+
+    var copyBtn = document.createElement('button');
+    copyBtn.className = 'copy-btn';
+    copyBtn.textContent = 'URI';
+    copyBtn.addEventListener('click', function(e){
+      e.preventDefault(); e.stopPropagation();
+      ToggKit.copy(ToggKit.hrefFor(item))
+        .then(function(){ addLog('URI kopyalandı: ' + item.label, 'try'); })
+        .catch(function(){ addLog('URI kopyalanamadı: ' + item.label, 'fail'); });
+    });
+    btnRow.appendChild(copyBtn);
+
+    row.appendChild(btnRow);
+
+    if (item.hint){
+      var noteWrap = document.createElement('div');
+      noteWrap.className = 'note-wrap';
+      noteWrap.innerHTML = '<div class="note">' + item.hint + '</div>';
+      row.appendChild(noteWrap);
+    }
+    app.appendChild(row);
+  });
+  updateCounters();
+}
+
+function onTry(id, label){
+  state[id] = {status:'trying', lastTried: Date.now()};
+  persist(); updateStatus(id); updateCounters();
+  addLog(id + '. ' + label + ' deneniyor…', 'try');
+
+  var settled = false;
+  function settle(ok){
+    if (settled) return;
+    settled = true;
+    if (ok){
+      state[id] = {status:'success', lastTried: Date.now()};
+      addLog(id + '. ' + label + ' → BAŞARILI (native açıldı)', 'ok');
+    } else if (state[id] && state[id].status === 'trying'){
+      state[id] = {status:'fail', lastTried: Date.now()};
+      addLog(id + '. ' + label + ' → yanıt yok', 'fail');
+    }
+    persist(); updateStatus(id); updateCounters();
+  }
+  var t = setTimeout(function(){ settle(false); }, 1100);
+  function visHandler(){
+    if (document.hidden){
+      clearTimeout(t);
+      document.removeEventListener('visibilitychange', visHandler);
+      settle(true);
+    }
+  }
+  document.addEventListener('visibilitychange', visHandler);
+  window.addEventListener('blur', function once(){ window.removeEventListener('blur', once); });
+}
+
+ToggKit.$('c-extra-type');
+function getCustomParams(){
+  return {
+    action:    ToggKit.$('c-action').value.trim(),
+    component: ToggKit.$('c-component').value.trim(),
+    package:   ToggKit.$('c-package').value.trim(),
+    flags:     ToggKit.$('c-flags').value,
+    extraKey:  ToggKit.$('c-extra-key').value.trim(),
+    extraVal:  ToggKit.$('c-extra-val').value.trim(),
+    extraType: ToggKit.$('c-extra-type').value,
+  };
+}
+function tryCustom(){
+  var p = getCustomParams();
+  if (!p.action && !p.component) return alert('Action veya Component gerekli');
+  var uri = ToggKit.buildIntent(p);
+  addLog('Özel → ' + (p.component || p.action), 'try');
+  location.href = uri;
+  setTimeout(function(){
+    if (document.hidden) addLog('Özel intent → başarılı görünüyor', 'ok');
+    else addLog('Özel intent → yanıt yok', 'fail');
+  }, 1100);
+}
+async function startFuzzCustom(){
+  if (fuzzRunning) return;
+  var p = getCustomParams();
+  if (!p.action && !p.component) return alert('Action veya Component gerekli');
+  fuzzRunning = true;
+  addLog('⚡ FUZZ MODE başladı (Custom)', 'fuzz');
+  for (var i = 0; i < FUZZ_FLAGS.length; i++){
+    if (!fuzzRunning) break;
+    var uri = ToggKit.buildIntent(Object.assign({}, p, {flags: FUZZ_FLAGS[i]}));
+    addLog('Fuzz [' + (i+1) + '/' + FUZZ_FLAGS.length + '] flag=' + FUZZ_FLAGS[i], 'fuzz');
+    location.href = uri;
+    await new Promise(function(r){ setTimeout(r, 85); });
+  }
+  fuzzRunning = false;
+  addLog('⚡ Fuzz tamamlandı', 'fuzz');
+}
+async function startFuzzFromList(){
+  if (fuzzRunning) return;
+  fuzzRunning = true;
+  addLog('⚡ FUZZ MODE (Liste) başladı', 'fuzz');
+  var targets = ITEMS.filter(function(i){ return i.kind === 'intent' && (i.tier === 'high' || i.tier === 'mid'); }).slice(0, 5);
+  for (var t = 0; t < targets.length; t++){
+    if (!fuzzRunning) break;
+    for (var f = 0; f < 5; f++){
+      if (!fuzzRunning) break;
+      var uri = ToggKit.buildIntent(Object.assign({}, targets[t], {flags: FUZZ_FLAGS[f]}));
+      addLog('Fuzz ' + targets[t].label + ' → ' + FUZZ_FLAGS[f], 'fuzz');
+      location.href = uri;
+      await new Promise(function(r){ setTimeout(r, 80); });
+    }
+  }
+  fuzzRunning = false;
+  addLog('⚡ Liste Fuzz tamamlandı', 'fuzz');
+}
+async function autoSequence(){
+  if (autoRunning) return;
+  autoRunning = true;
+  addLog('▶ Otomatik sıralı deneme başladı', 'try');
+  for (var i = 0; i < ITEMS.length; i++){
+    if (!autoRunning) break;
+    if (state[ITEMS[i].id] && state[ITEMS[i].id].status === 'success') continue;
+    var link = document.querySelector('a[href*="' + (ITEMS[i].action || ITEMS[i].package || '') + '"]');
+    if (link){ link.click(); await new Promise(function(r){ setTimeout(r, 1400); }); }
+  }
+  autoRunning = false;
+  addLog('Otomatik deneme tamamlandı', 'ok');
+}
+function exportState(){
+  var data = {ua: navigator.userAgent, time: new Date().toISOString(), state: state, log: log.slice(0, 30)};
+  ToggKit.copy(JSON.stringify(data, null, 2))
+    .then(function(){ alert('Durum + log kopyalandı'); })
+    .catch(function(){ alert('Kopyalanamadı'); });
+}
+function clearAll(){
+  if (confirm('Tüm durum ve log temizlensin mi?')){
+    state = {}; log = [];
+    try { localStorage.removeItem(STORE_KEY); } catch (e) {}
+    ToggKit.$('log').innerHTML = '<div style="color:#607d8b">Temizlendi.</div>';
+    render();
+  }
+}
+
+(function initVerdict(){
+  var ua = navigator.userAgent || '';
+  var v = ToggKit.verdict(ua);
+  var box = ToggKit.$('verdict');
+  box.className = v.c;
+  box.querySelector('.big').textContent = v.t;
+  box.querySelector('.why').textContent = v.s;
+  var m = /nores=([^&]+)/.exec(location.hash || '');
+  if (m){ history.replaceState(null, '', location.pathname + location.search); }
+})();
+
+render();
+</script>
+</body>
+</html>

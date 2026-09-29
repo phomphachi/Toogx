@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>Togg IVI — Ortam / WebView Ölçüm</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="tabs">
+  <a href="index.html">🎯 Bypass Paneli</a>
+  <a class="active" href="probe.html">🔬 Ortam / WebView</a>
+  <a href="klavye.html">⌨️ Klavye / Seçim</a>
+</nav>
+
+<h1>Togg IVI — Ortam / WebView Ölçüm</h1>
+<p class="sub">Tek soru: kiosk <b>plain WebView</b> mi, <b>Chrome/Custom Tab</b> mı? Üstteki kutu + 🎯 kritik testler belirler.</p>
+
+<div id="verdict" class="try"><div class="big">…</div><div class="why">okunuyor</div></div>
+
+<div class="toolbar">
+  <button class="primary" onclick="scanEnv()">🔎 Ortam + köprü tara</button>
+  <button onclick="exportAll()">📋 Durumu kopyala</button>
+  <button class="reset" onclick="clearAll()">↺ Temizle</button>
+</div>
+
+<h2 class="section-title">🎯 Kritik testler (sırayla tek tek)</h2>
+<div class="crit" id="crit"></div>
+
+<h2 class="section-title">Ortam</h2>
+<pre id="env">taranmadı</pre>
+
+<h2 class="section-title">Motor sürümü &amp; risk</h2>
+<pre id="engine">taranmadı</pre>
+
+<h2 class="section-title">Olası JS köprüleri (addJavascriptInterface)</h2>
+<pre id="bridges">taranmadı</pre>
+
+<h2 class="section-title">Şema matrisi</h2>
+<table id="schemes"><thead><tr><th>URI</th><th>Dene</th><th>Sonuç</th></tr></thead><tbody></tbody></table>
+
+<h2 class="section-title">Native yüzey (WebView'de de açık olabilir)</h2>
+<div class="box">
+  <div>Dosya seçici: <button onclick="fileProbe()">input type=file aç</button> <span id="fileSt" class="st idle">bekliyor</span></div>
+  <div style="margin-top:8px">İndirme: <a href="data:text/plain,togg-probe" download="togg_probe.txt" id="dlProbe">data: indir</a> <span id="dlSt" class="st idle">bekliyor</span></div>
+  <div style="margin-top:8px">window.open: <button onclick="openProbe()">aç</button> <span id="openSt" class="st idle">bekliyor</span></div>
+  <div style="margin-top:8px">file:// okuma: <button onclick="fileRead()">fetch dene</button> <span id="freadSt" class="st idle">bekliyor</span></div>
+</div>
+<pre id="fileOut">taranmadı</pre>
+
+<h2 class="section-title">Log</h2>
+<div class="log-box" id="log"></div>
+
+<input type="file" id="fileInput" style="display:none">
+
+<footer>Bir sonraki adım: <a href="index.html">🎯 Bypass Paneli</a> · Kendi aracın üzerinde, park hâlinde kullan.</footer>
+
+<script src="common.js"></script>
+<script>
+var CRIT = [
+  {id:'c_aa',   uri:'android-app://com.android.settings', note:'BROWSABLE şartından muaf → Chrome/Custom Tab ise AYARLAR açılır.'},
+  {id:'c_sett', intent:{action:'android.settings.SETTINGS'}, note:'düzeltilmiş intent:// (Ayarlar) — Chrome BROWSABLE kısıtına tabi.'},
+  {id:'c_dev',  intent:{action:'android.settings.APPLICATION_DEVELOPMENT_SETTINGS'}, note:'Geliştirici Seçenekleri (USB debugging).'},
+  {id:'c_link', uri:'https://superapp-api.channels.togg.cloud/Settings', note:'Togg app-link (autoVerify) → native uygulama.'},
+];
+
+var SCHEMES = [
+  {g:'🎯 Kritik',        id:'s_aa',   uri:'android-app://com.android.settings'},
+  {g:'🎯 Kritik',        id:'s_sett', intent:{action:'android.settings.SETTINGS'}},
+  {g:'🎯 Kritik',        id:'s_dev',  intent:{action:'android.settings.APPLICATION_DEVELOPMENT_SETTINGS'}},
+  {g:'🎯 Kritik',        id:'s_link', uri:'https://superapp-api.channels.togg.cloud/Settings'},
+  {g:'🎯 Kritik',        id:'s_tr',   uri:'trumore-superapp://custom/redirection/'},
+  {g:'Togg app',         id:'s_ins',  intent:{scheme:'insidertogg'}},
+  {g:'Togg app',         id:'s_map',  uri:'https://maps.app.goo.gl/'},
+  {g:'Native (genelde ✗)', id:'s_plain', intent:{action:'android.settings.SETTINGS'}},
+  {g:'Native (genelde ✗)', id:'s_file1', uri:'file:///sdcard/'},
+  {g:'Native (genelde ✗)', id:'s_file2', uri:'file:///data/local/tmp/'},
+  {g:'Native (genelde ✗)', id:'s_cont',  uri:'content://settings/'},
+  {g:'Native (genelde ✗)', id:'s_mkt',   uri:'market://details?id=com.android.settings'},
+  {g:'Native (genelde ✗)', id:'s_chr',   uri:'chrome://version'},
+  {g:'Kontrol (beklenen ✓)', id:'s_http', uri:'https://example.com'},
+  {g:'Kontrol (beklenen ✓)', id:'s_tel',  uri:'tel:112'},
+  {g:'Kontrol (beklenen ✓)', id:'s_mail', uri:'mailto:probe@example.com'},
+];
+var METHODS = ['link','href','open','iframe'];
+var results = {};
+
+function uriOf(it){
+  if (it.uri) return it.uri;
+  if (it.intent) return ToggKit.buildIntent(it.intent);
+  return '';
+}
+function log(msg){
+  var el = ToggKit.$('log');
+  var ts = new Date().toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  el.innerHTML = el.innerHTML.replace(/<div style="[^"]*">.*?<\/div>/, '') + '<div>[' + ts + '] ' + msg + '</div>';
+  el.scrollTop = el.scrollHeight;
+}
+function setStatus(key, st, txt){
+  results[key] = {status:st, txt:txt || ''};
+  var el = ToggKit.$('st_' + key) || ToggKit.$(key + 'St');
+  if (el){ el.className = 'st ' + st; el.textContent = txt || st; }
+}
+function showVerdict(ua){
+  var v = ToggKit.verdict(ua);
+  var box = ToggKit.$('verdict');
+  box.className = v.c;
+  box.querySelector('.big').textContent = v.t;
+  box.querySelector('.why').textContent = v.s;
+  return v;
+}
+
+var pending = null;
+function armDetect(key, ms){
+  pending = key;
+  setTimeout(function(){ if (pending === key){ setStatus(key, 'bad', 'yanıt yok'); pending = null; } }, ms || 1200);
+}
+document.addEventListener('visibilitychange', function(){
+  if (document.hidden && pending){ setStatus(pending, 'ok', 'native açıldı'); log('NATIVE AÇILDI: ' + pending); pending = null; }
+});
+window.addEventListener('blur', function(){ if (pending){ setStatus(pending, 'ok', 'blur'); log('BLUR: ' + pending); pending = null; } });
+
+function invoke(uri, method, key){
+  setStatus(key, 'try', 'deneniyor');
+  armDetect(key);
+  try{
+    if (method === 'link'){
+      var a = document.createElement('a');
+      a.href = uri; a.style.display = 'none';
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){ a.remove(); }, 500);
+    } else if (method === 'href'){ location.href = uri; }
+    else if (method === 'open'){ var w = window.open(uri, '_blank'); if (!w) log('window.open null döndü (' + key + ')'); }
+    else if (method === 'iframe'){
+      var f = document.createElement('iframe');
+      f.style.display = 'none'; f.src = uri;
+      document.body.appendChild(f);
+      setTimeout(function(){ f.remove(); }, 800);
+    }
+  } catch (e){ setStatus(key, 'bad', 'hata: ' + e.message); log('HATA ' + key + ': ' + e.message); }
+}
+
+function renderCrit(){
+  var box = ToggKit.$('crit');
+  box.innerHTML = '';
+  CRIT.forEach(function(c){
+    var b = document.createElement('button');
+    b.innerHTML = uriOf(c) + '<small>' + c.note + '</small>';
+    b.addEventListener('click', function(){ invoke(uriOf(c), 'link', c.id + ':link'); });
+    box.appendChild(b);
+    var s = document.createElement('div');
+    s.style.cssText = 'font-size:11px;margin:-4px 0 4px;';
+    s.innerHTML = '<span class="st idle" id="st_' + c.id + ':link"></span>';
+    box.appendChild(s);
+  });
+}
+
+function buildTable(){
+  var tb = document.querySelector('#schemes tbody');
+  tb.innerHTML = '';
+  var lastG = null;
+  SCHEMES.forEach(function(s){
+    if (s.g !== lastG){
+      lastG = s.g;
+      var gr = document.createElement('tr'); gr.className = 'grp';
+      var gc = document.createElement('td'); gc.colSpan = 3; gc.textContent = s.g;
+      gr.appendChild(gc); tb.appendChild(gr);
+    }
+    var tr = document.createElement('tr');
+    var td1 = document.createElement('td'); td1.className = 'uri'; td1.textContent = uriOf(s);
+    var td2 = document.createElement('td');
+    var acts = document.createElement('div'); acts.className = 'acts';
+    METHODS.forEach(function(m){
+      var b = document.createElement('button'); b.textContent = m;
+      b.addEventListener('click', function(){ invoke(uriOf(s), m, s.id + ':' + m); });
+      acts.appendChild(b);
+    });
+    td2.appendChild(acts);
+    var td3 = document.createElement('td');
+    METHODS.forEach(function(m){
+      var sp = document.createElement('span'); sp.className = 'st idle'; sp.id = 'st_' + s.id + ':' + m;
+      td3.appendChild(sp); td3.appendChild(document.createTextNode(' '));
+    });
+    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+    tb.appendChild(tr);
+  });
+}
+
+function scanEnv(){
+  var e = {};
+  e.href = location.href;
+  e.userAgent = navigator.userAgent;
+  e.platform = navigator.platform;
+  e.vendor = navigator.vendor || '';
+  e.language = navigator.language;
+  e.dpr = window.devicePixelRatio;
+  e.screen = screen.width + 'x' + screen.height;
+  e.viewport = window.innerWidth + 'x' + window.innerHeight;
+  e.verdict = showVerdict(navigator.userAgent).t;
+  var er = ToggKit.engineRisk(navigator.userAgent);
+  e.engine = (er.v !== null ? 'Chrome/' + er.v : 'bilinmiyor') + ' — ' + er.txt;
+  var enEl = ToggKit.$('engine');
+  enEl.textContent = e.engine;
+  enEl.style.color = er.cls === 'bad' ? '#ff6b6b' : (er.cls === 'ok' ? '#69f0ae' : '#4fc3f7');
+  ToggKit.$('env').textContent = JSON.stringify(e, null, 2);
+  log('ortam tarandı → ' + e.verdict + ' | motor: ' + e.engine);
+
+  var defaults = null;
+  try{
+    var f = document.createElement('iframe');
+    f.style.display = 'none';
+    document.body.appendChild(f);
+    defaults = new Set(Object.getOwnPropertyNames(f.contentWindow));
+    f.remove();
+  } catch (err){ log('iframe baseline yok: ' + err.message); }
+
+  var candidates = ['Android','JsBridge','jsBridge','nativeBridge','AndroidBridge','bridge','appInterface','togg','Togg','native','Native','webkit','chrome','__bridge__','AndroidInterface','jsInterface'];
+  var found = [];
+  var names;
+  try { names = Object.getOwnPropertyNames(window); } catch (err){ names = []; }
+  names.forEach(function(k){
+    var isCandidate = candidates.indexOf(k) !== -1;
+    var injected = defaults ? !defaults.has(k) : isCandidate;
+    if (!isCandidate && !injected) return;
+    if (['window','document','location','navigator','top','self','frames','parent'].indexOf(k) !== -1) return;
+    var v; try { v = window[k]; } catch (err){ return; }
+    var rec = {name:k, injected:injected};
+    if (typeof v === 'function'){ rec.type = 'function'; rec.fn = v.name || ''; }
+    else if (v && typeof v === 'object'){
+      rec.type = 'object';
+      try { rec.ctor = v.constructor && v.constructor.name; } catch (err) {}
+      var ms = [];
+      var RISK_HI = ['loadurl','open','startactivity','exec','shell','run','install','launch','intent','cmd','command','process','eval','javascript','invoke','call','send','post','write','delete','remove','wifi','adb','settings','system','file','download','upload','put'];
+      var RISK_MID = ['get','read','info','data','token','device','version','id','list','query'];
+      function riskOf(n){
+        n = String(n).toLowerCase();
+        for (var i=0;i<RISK_HI.length;i++){ if (n.indexOf(RISK_HI[i]) >= 0) return 'HIGH'; }
+        for (var j=0;j<RISK_MID.length;j++){ if (n.indexOf(RISK_MID[j]) >= 0) return 'MID'; }
+        return 'LOW';
+      }
+      try { Object.getOwnPropertyNames(v).forEach(function(m){ try { if (typeof v[m] === 'function') ms.push({m:m, r:riskOf(m)}); } catch (err) {} }); } catch (err) {}
+      rec.methods = ms;
+      rec.danger = ms.filter(function(x){ return x.r === 'HIGH'; }).length;
+    } else { rec.type = typeof v; }
+    found.push(rec);
+  });
+  ToggKit.$('bridges').textContent = found.length ? JSON.stringify(found, null, 2)
+    : 'enjekte köprü bulunamadı (varsayılan pencerede ' + (defaults ? defaults.size : '?') + ' özellik)';
+  log('köprü taraması: ' + found.length + ' aday' + (found.some(function(r){ return r.danger; }) ? ' — YÜKSEK RİSKLİ METOT VAR' : ''));
+}
+
+function fileProbe(){
+  setStatus('file', 'try', 'açılıyor');
+  armDetect('file', 1500);
+  try { ToggKit.$('fileInput').click(); } catch (e){ setStatus('file', 'bad', 'hata: ' + e.message); }
+}
+ToggKit.$('fileInput').addEventListener('change', function(ev){
+  var f = ev.target.files && ev.target.files[0];
+  if (f){ setStatus('file', 'ok', 'seçildi: ' + f.name); log('DOSYA SEÇİLDİ: ' + f.name + ' (' + f.size + 'B)'); }
+});
+ToggKit.$('dlProbe').addEventListener('click', function(){ setStatus('dl', 'try', 'deneniyor'); armDetect('dl', 1500); });
+function openProbe(){
+  setStatus('open', 'try', 'deneniyor'); armDetect('open', 1200);
+  var w = window.open('https://example.com', '_blank');
+  if (w){ setStatus('open', 'ok', 'pencere açıldı'); log('window.open AKTİF'); }
+  else { log('window.open null'); }
+}
+
+var FILE_PATHS = [
+  'file:///proc/version',
+  'file:///etc/hosts',
+  'file:///sdcard/',
+  'file:///data/local/tmp/',
+  'file:///data/data/com.togg.toggmobile/shared_prefs/'
+];
+function fileRead(){
+  var out = ToggKit.$('fileOut');
+  out.textContent = '';
+  setStatus('fread', 'try', 'deneniyor');
+  var done = 0, okAny = false;
+  function finish(){ done++; if (done >= FILE_PATHS.length){ setStatus('fread', okAny ? 'ok' : 'bad', okAny ? 'OKUNDU' : 'bloklandı'); } }
+  FILE_PATHS.forEach(function(p){
+    out.textContent += p + ' → ';
+    try {
+      fetch(p, {method:'GET'}).then(function(r){ return r.text(); }).then(function(t){
+        okAny = true;
+        out.textContent += 'OKUNDU (' + t.length + 'B): ' + t.substr(0, 60).replace(/\s+/g, ' ') + '\n';
+        finish();
+      }).catch(function(e){
+        out.textContent += 'bloklandı (' + (e && e.message ? e.message : 'hata') + ')\n'; finish();
+      });
+    } catch (e){ out.textContent += 'hata: ' + e.message + '\n'; finish(); }
+  });
+}
+
+function exportAll(){
+  var payload = {
+    ua: navigator.userAgent,
+    time: new Date().toISOString(),
+    env: ToggKit.$('env').textContent,
+    engine: ToggKit.$('engine').textContent,
+    bridges: ToggKit.$('bridges').textContent,
+    fileRead: ToggKit.$('fileOut').textContent,
+    results: results,
+    log: ToggKit.$('log').textContent,
+  };
+  var txt = JSON.stringify(payload, null, 2);
+  ToggKit.copy(txt).then(function(){ alert('Kopyalandı'); }, function(){ alert(txt); });
+}
+
+function clearAll(){
+  results = {};
+  ToggKit.$('log').innerHTML = '';
+  ToggKit.$('env').textContent = 'taranmadı';
+  ToggKit.$('engine').textContent = 'taranmadı';
+  ToggKit.$('engine').style.color = '';
+  ToggKit.$('bridges').textContent = 'taranmadı';
+  ToggKit.$('fileOut').textContent = 'taranmadı';
+  document.querySelectorAll('.st').forEach(function(el){ el.className = 'st idle'; el.textContent = ''; });
+}
+
+renderCrit();
+buildTable();
+showVerdict(navigator.userAgent);
+window.addEventListener('load', function(){
+  scanEnv();
+  var m = /nores=([^&]+)/.exec(location.hash || '');
+  if (m){
+    var key = decodeURIComponent(m[1]);
+    setTimeout(function(){ setStatus(key, 'bad', 'fallback → işlenmedi'); log('FALLBACK: ' + key + ' işlenmedi'); }, 250);
+  }
+});
+</script>
+</body>
+</html>
