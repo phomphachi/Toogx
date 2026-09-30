@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>Togg IVI — Portal PoC</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="tabs">
+  <a href="index.html">🎯 Bypass</a>
+  <a href="probe.html">🔬 Ortam</a>
+  <a href="klavye.html">⌨️ Klavye</a>
+  <a class="active" href="portal.html">🕸️ Portal PoC</a>
+</nav>
+
+<h1>🕸️ Captive Portal PoC</h1>
+<p class="sub">Sistem (kiosk-dışı) WebView'de açılır. Aşağıdaki vektörler burada <b>daha yüksek</b> ihtimalle çözer. "Tümünü dene" sırayla tetikler; her kaçış sinyali kaydedilir.</p>
+
+<div class="stats">
+  <span>UA <b id="ua">…</b></span>
+</div>
+
+<div class="toolbar">
+  <button class="primary" onclick="tumunuDene()">▶ Tümünü dene</button>
+  <button onclick="deneOzel()">intent:// (Özel)</button>
+  <button class="reset" onclick="temizle()">↺ Temizle</button>
+</div>
+
+<div class="box">
+  <h3>Vektörler (tek tek)</h3>
+  <div class="toolbar" style="margin:0">
+    <button onclick="v1()">window.open _blank</button>
+    <button onclick="v2()">a target=_blank</button>
+    <button onclick="v3()">intent:// settings</button>
+    <button onclick="v4()">intent:// component</button>
+    <button onclick="v5()">mailto:</button>
+    <button onclick="v6()">geo:</button>
+    <button onclick="v7()">market://</button>
+    <button onclick="v8()">window.print()</button>
+    <button onclick="v9()">navigator.share</button>
+    <button onclick="v10()">location=google</button>
+    <button onclick="v11()">indir (bildirim)</button>
+    <button onclick="v12()">file picker</button>
+  </div>
+</div>
+
+<div class="box">
+  <h3>Bir şey açıldı mı? (elle işaretle)</h3>
+  <div class="toolbar" style="margin:0">
+    <button onclick="mark('TARAYICI açıldı','ok')">Tarayıcı açıldı</button>
+    <button onclick="mark('AYARLAR açıldı','ok')">Ayarlar açıldı</button>
+    <button onclick="mark('uygulama açıldı','try')">Başka uygulama</button>
+    <button onclick="mark('hiçbir şey olmadı','fail')">Hiçbir şey</button>
+  </div>
+</div>
+
+<div class="box"><h3>Kayıt</h3><div class="log-box" id="log"></div></div>
+
+<footer><a href="index.html">🎯 Bypass</a> · Kendi aracın, park hâlinde.</footer>
+
+<script src="common.js"></script>
+<script>
+function ts(){ return new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
+function log(m,t){ var d=document.createElement('div'); if(t)d.className='log-'+t; d.textContent='['+ts()+'] '+m; ToggKit.$('log').appendChild(d); ToggKit.$('log').scrollTop=1e9; }
+function mark(m,t){ log('İŞARET: '+m,t); }
+function temizle(){ ToggKit.$('log').innerHTML=''; }
+
+var gizlendi=false;
+document.addEventListener('visibilitychange', function(){ if(document.hidden){ gizlendi=true; log('SAYFA GİZLENDİ → kaçış sinyali (başka pencere/uygulama)', 'ok'); } });
+window.addEventListener('blur', function(){ log('PENCERE ODAK KAYBI (olası kaçış)', 'try'); });
+
+function v1(){ log('v1 window.open _blank'); try{ window.open('https://www.google.com/','_blank'); }catch(e){ log('hata: '+e.message,'fail'); } }
+function v2(){ log('v2 <a target=_blank>'); var a=document.createElement('a'); a.href='https://www.google.com/'; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); }
+function v3(){ var u=ToggKit.buildIntent({action:'android.settings.SETTINGS'}); log('v3 '+u); location.href=u; }
+function v4(){ var u=ToggKit.buildIntent({component:'com.android.settings/.Settings', action:'android.settings.SETTINGS'}); log('v4 '+u); location.href=u; }
+function v5(){ log('v5 mailto:'); location.href='mailto:test@example.com?subject=probe'; }
+function v6(){ log('v6 geo:'); location.href='geo:40.98,28.66?q=probe'; }
+function v7(){ log('v7 market://'); location.href='market://details?id=com.android.chrome'; }
+function v8(){ log('v8 window.print()'); try{ window.print(); }catch(e){ log('hata: '+e.message,'fail'); } }
+function v9(){ log('v9 navigator.share'); if(navigator.share){ navigator.share({title:'probe',text:'portal',url:location.href}).catch(function(e){ log('share: '+e.message,'try'); }); } else { log('navigator.share YOK','fail'); } }
+function v10(){ log('v10 location=google'); location.href='https://www.google.com/'; }
+function v11(){ log('v11 indir → bildirim/Downloads zinciri'); var a=document.createElement('a'); a.href='data:text/plain;base64,'+btoa('togg probe '+Date.now()); a.download='pcp-probe.txt'; document.body.appendChild(a); a.click(); }
+function v12(){ log('v12 file picker (SAF/Documents)'); var i=document.createElement('input'); i.type='file'; i.style.position='fixed'; i.style.left='-9999px'; document.body.appendChild(i); i.click(); }
+function deneOzel(){
+  var c=prompt('intent:// hedefi (component veya package):','com.android.settings/.Settings');
+  if(!c) return;
+  var u=ToggKit.buildIntent({component:(c.indexOf('/')>0?c:undefined), package:(c.indexOf('/')>0?undefined:c), action:'android.settings.SETTINGS'});
+  log('özel '+u); location.href=u;
+}
+var sira=[v1,v2,v3,v4,v5,v6,v7,v8,v9,v10,v11];
+function tumunuDene(){
+  log('--- otomatik dizi başlıyor (her 1.6s) ---','try');
+  var i=0;
+  (function adim(){ if(i>=sira.length){ log('--- dizi bitti ---','try'); return; } sira[i++](); setTimeout(adim,1600); })();
+}
+ToggKit.$('ua').textContent = (navigator.userAgent||'').slice(0,60);
+log('portal hazır — vektörleri dene','try');
+</script>
+</body>
+</html>
