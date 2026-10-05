@@ -41,6 +41,9 @@ window.ToggKit = (function () {
     if (o.component) p.push('component=' + o.component);
     if (o.scheme) p.push('scheme=' + o.scheme);
     if (o.flags) p.push('launchFlags=' + o.flags);
+    if (o.type) p.push('type=' + o.type);
+    if (o.category) p.push('category=' + o.category);
+    if (o.data) p.push('data=' + o.data);
     if (o.extraKey && o.extraVal !== '' && o.extraVal != null) {
       p.push((o.extraType || 'S') + '.' + o.extraKey + '=' + o.extraVal);
     }

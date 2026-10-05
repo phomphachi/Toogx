@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>Togg IVI — S4 Intent Çözümleme</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="tabs">
+  <a href="index.html">🎯 Bypass</a>
+  <a href="probe.html">🔬 Ortam</a>
+  <a href="klavye.html">⌨️ Klavye</a>
+  <a class="active" href="intent.html">🚪 S4 Intent</a>
+</nav>
+
+<h1>Togg IVI — S4 Intent Çözümleme</h1>
+<p class="sub">Öncelik: <b>Geliştirici Seçenekleri</b> → <b>DocumentsUI/SEND</b>. Her satır gerçek user-gesture (<code>&lt;a&gt;</code>) ile denenir; <code>window.location</code> WebView'de bloklanabildiği için birincil yol tıklamadır.</p>
+
+<div id="verdict" class="try"><div class="big">…</div><div class="why">ortam okunuyor</div></div>
+
+<div class="stats">
+  <span>✓ <b id="cnt-ok">0</b></span>
+  <span>✗ <b id="cnt-fail">0</b></span>
+  <span>… <b id="cnt-try">0</b></span>
+</div>
+
+<div class="toolbar">
+  <button class="primary" onclick="runSequence()">▶ S4 Sırası</button>
+  <button onclick="exportState()">📋 Kopyala</button>
+  <button class="reset" onclick="clearAll()">↺ Sıfırla</button>
+</div>
+
+<div id="app"></div>
+
+<div class="box">
+  <h3>Kontrol listesi (S4 kararı)</h3>
+  <div class="note" style="margin-bottom:6px">
+    1. <b>Ekrandan doğrula:</b> HID tek yönlü — "açıldı" demek için araç ekranında Ayarlar/Dosyalar görünmeli.<br>
+    2. <b>Toggle ≠ erişim:</b> ADB anahtarını açmak IP rotası olmadan işe yaramaz → IVI'ye hotspot/ethernet rotası ayrı adım.<br>
+    3. <b>Yanıt yoksa</b> aynı satırı <code>android-app</code> / <code>form</code> varyantıyla da dene.<br>
+    4. Sonucu satırdaki <b>✓ / ✗</b> ile elle işaretle (otomatik sezgi yanılabilir).
+  </div>
+</div>
+
+<div class="log-box" id="log"><div style="color:#607d8b">Deneme geçmişi burada görünecek…</div></div>
+
+<footer>
+  Ortam/kiosk tipini kesinleştirmek için <a href="probe.html">🔬 Ortam / WebView</a> · diğer vektörler için <a href="index.html">🎯 Bypass</a>.<br>
+  Kendi aracın üzerinde, park hâlinde kullan.
+</footer>
+
+<script src="common.js"></script>
+<script>
+const GROUPS = {
+  A: { t:'🔑 A — Geliştirici Seçenekleri / ADB (öncelik)', cls:'tier-target' },
+  B: { t:'📂 B — DocumentsUI / SEND (erişim yüzeyi)',     cls:'tier-high' },
+  C: { t:'🔗 C — Fallback yüzeyler',                       cls:'tier-link' },
+};
+
+const ITEMS = [
+  {id:'A1', grup:'A', prio:1, kind:'intent', action:'android.settings.APPLICATION_DEVELOPMENT_SETTINGS', flags:'0x10000000',
+   label:'Geliştirici Seçenekleri', hint:'Birincil hedef. Açılırsa USB/Kablosuz hata ayıklama.'},
+  {id:'A2', grup:'A', prio:2, kind:'intent', action:'android.settings.APPLICATION_DEVELOPMENT_SETTINGS',
+   component:'com.android.settings/.Settings$DevelopmentSettingsDashboardActivity', flags:'0x10000000',
+   label:'Geliştirici (DashboardActivity)', hint:'A1 yanıtsızsa explicit component varyantı.'},
+  {id:'A3', grup:'A', prio:3, kind:'intent', action:'android.settings.APPLICATION_SETTINGS', flags:'0x10000000',
+   label:'Uygulama Listesi', hint:'Ayarlar → Uygulamalar; buradan alt ekranlara in.'},
+  {id:'A4', grup:'A', prio:4, kind:'intent', action:'android.settings.MANAGE_APPLICATIONS_SETTINGS', flags:'0x10000000',
+   label:'Uygulama Yönetimi'},
+  {id:'A5', grup:'A', prio:5, kind:'android-app', package:'com.android.settings',
+   label:'android-app:// Ayarlar', hint:'BROWSABLE kısıtından muaf launcher çağrısı.'},
+
+  {id:'B1', grup:'B', prio:1, kind:'intent', action:'android.intent.action.OPEN_DOCUMENT',
+   category:'android.intent.category.OPENABLE', type:'*/*', flags:'0x10000000',
+   label:'OPEN_DOCUMENT (Dosya Seç)', hint:'Sistem dosya seçici → dosya sistemi yüzeyi.'},
+  {id:'B2', grup:'B', prio:2, kind:'intent', action:'android.intent.action.GET_CONTENT', type:'*/*', flags:'0x10000000',
+   label:'GET_CONTENT'},
+  {id:'B3', grup:'B', prio:3, kind:'intent', action:'android.intent.action.CREATE_DOCUMENT', type:'text/plain', flags:'0x10000000',
+   label:'CREATE_DOCUMENT (Kaydet)'},
+  {id:'B4', grup:'B', prio:4, kind:'intent', action:'android.intent.action.SEND', type:'text/plain',
+   extraKey:'android.intent.extra.TEXT', extraVal:'togg', extraType:'S', flags:'0x10000000',
+   label:'ACTION_SEND (Paylaş)'},
+  {id:'B5', grup:'B', prio:5, kind:'android-app', package:'com.android.documentsui',
+   label:'android-app:// DocumentsUI'},
+  {id:'B6', grup:'B', prio:6, kind:'android-app', package:'com.android.providers.downloads',
+   label:'android-app:// İndirilenler'},
+
+  {id:'C1', grup:'C', prio:1, kind:'url', url:'https://superapp-api.channels.togg.cloud/Settings',
+   label:'app-link /Settings', hint:'Manifest autoVerify app-link → Togg app içi rota.'},
+  {id:'C2', grup:'C', prio:2, kind:'scheme', schemeUrl:'trumore-superapp://custom/redirection/Home',
+   label:'Şema trumore-superapp', hint:'BROWSABLE kayıtlı özel şema → Togg app deep link.'},
+  {id:'C3', grup:'C', prio:3, kind:'intent', scheme:'trumore-superapp', package:'com.togg.toggmobile',
+   action:'android.intent.action.VIEW', label:'intent:// trumore-superapp'},
+];
+
+const KIND_BADGE = { intent:'intent://', 'android-app':'app://', url:'app-link', scheme:'şema' };
+const STORE_KEY = 'togg_intent_s4';
+let state = {};
+let log = [];
+let seqRunning = false;
+
+try { state = JSON.parse(localStorage.getItem(STORE_KEY) || '{}') || {}; } catch (e) { state = {}; }
+
+function persist(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {} }
+function statusLabel(s){
+  if (!s || !s.status) return '';
+  if (s.status === 'success') return '✓ açıldı';
+  if (s.status === 'fail')    return '✗ yanıt yok';
+  if (s.status === 'trying')  return '… deneniyor';
+  return '';
+}
+function updateCounters(){
+  let ok=0, fail=0, trying=0;
+  Object.keys(state).forEach(function(k){
+    var s = state[k];
+    if (s.status === 'success') ok++;
+    else if (s.status === 'fail') fail++;
+    else if (s.status === 'trying') trying++;
+  });
+  ToggKit.$('cnt-ok').textContent = ok;
+  ToggKit.$('cnt-fail').textContent = fail;
+  ToggKit.$('cnt-try').textContent = trying;
+}
+function addLog(msg, type){
+  var time = new Date().toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  log.unshift({time:time, msg:msg, type:type || ''});
+  if (log.length > 80) log.pop();
+  ToggKit.$('log').innerHTML = log.map(function(l){
+    return '<div class="log-' + (l.type || '') + '">[' + l.time + '] ' + l.msg + '</div>';
+  }).join('');
+}
+function updateStatus(id){
+  var el = ToggKit.$('status-' + id);
+  if (el) el.textContent = statusLabel(state[id]);
+}
+function mark(id, ok, label){
+  state[id] = {status: ok ? 'success' : 'fail', lastTried: Date.now(), manual: true};
+  persist(); updateStatus(id); updateCounters();
+  addLog(id + '. ' + label + ' → elle ' + (ok ? 'AÇILDI ✓' : 'AÇILMADI ✗'), ok ? 'ok' : 'fail');
+}
+
+function intentFor(item){
+  if (item.kind === 'android-app') return 'android-app://' + item.package + '/';
+  if (item.kind === 'url')    return item.url;
+  if (item.kind === 'scheme') return item.schemeUrl;
+  return ToggKit.buildIntent(item);
+}
+
+function rowFor(item){
+  var row = document.createElement('div');
+  row.className = 'row';
+
+  var btnRow = document.createElement('div');
+  btnRow.className = 'btn-row';
+
+  var a = document.createElement('a');
+  a.className = 'btn ' + (GROUPS[item.grup] ? GROUPS[item.grup].cls : '');
+  a.dataset.id = item.id;
+  a.href = intentFor(item);
+  a.innerHTML = '<span>' + item.id + '. ' + item.label +
+                ' <span class="badge">' + (KIND_BADGE[item.kind] || item.kind) + '</span></span>' +
+                '<span class="status" id="status-' + item.id + '">' + statusLabel(state[item.id]) + '</span>';
+  a.addEventListener('click', function(){ onTry(item); });
+  btnRow.appendChild(a);
+  row.appendChild(btnRow);
+
+  var acts = document.createElement('div');
+  acts.className = 'acts';
+  acts.style.padding = '6px 10px';
+
+  var bApp = document.createElement('button');
+  bApp.textContent = 'android-app';
+  bApp.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation();
+    onTry(item); location.href = 'android-app://' + (item.package || 'com.android.settings') + '/'; });
+  acts.appendChild(bApp);
+
+  var bForm = document.createElement('button');
+  bForm.textContent = 'form';
+  bForm.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation();
+    onTry(item); submitForm(intentFor(item)); });
+  acts.appendChild(bForm);
+
+  var bUri = document.createElement('button');
+  bUri.textContent = 'URI';
+  bUri.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation();
+    ToggKit.copy(intentFor(item))
+      .then(function(){ addLog('URI kopyalandı: ' + item.label, 'try'); })
+      .catch(function(){ addLog('URI kopyalanamadı: ' + item.label, 'fail'); }); });
+  acts.appendChild(bUri);
+
+  var bOk = document.createElement('button');
+  bOk.textContent = '✓';
+  bOk.style.background = '#00695c';
+  bOk.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation();
+    mark(item.id, true, item.label); });
+  acts.appendChild(bOk);
+
+  var bNo = document.createElement('button');
+  bNo.textContent = '✗';
+  bNo.style.background = '#4a1d1d';
+  bNo.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation();
+    mark(item.id, false, item.label); });
+  acts.appendChild(bNo);
+
+  row.appendChild(acts);
+
+  if (item.hint){
+    var noteWrap = document.createElement('div');
+    noteWrap.className = 'note-wrap';
+    noteWrap.innerHTML = '<div class="note">' + item.hint + '</div>';
+    row.appendChild(noteWrap);
+  }
+  return row;
+}
+
+function render(){
+  var app = ToggKit.$('app');
+  app.innerHTML = '';
+  ['A','B','C'].forEach(function(g){
+    var h = document.createElement('div');
+    h.className = 'section-title';
+    h.textContent = GROUPS[g].t;
+    app.appendChild(h);
+    ITEMS.filter(function(i){ return i.grup === g; })
+         .sort(function(x,y){ return x.prio - y.prio; })
+         .forEach(function(i){ app.appendChild(rowFor(i)); });
+  });
+  updateCounters();
+}
+
+function onTry(item){
+  var id = item.id, label = item.label;
+  state[id] = {status:'trying', lastTried: Date.now(), kind:item.kind};
+  persist(); updateStatus(id); updateCounters();
+  addLog(id + '. ' + label + ' deneniyor…', 'try');
+
+  var settled = false;
+  function settle(ok){
+    if (settled) return;
+    settled = true;
+    if (state[id] && state[id].manual) return;
+    if (ok){
+      state[id] = {status:'success', lastTried: Date.now()};
+      addLog(id + '. ' + label + ' → olası AÇILDI (ekrandan doğrula)', 'ok');
+    } else if (state[id] && state[id].status === 'trying'){
+      state[id] = {status:'fail', lastTried: Date.now()};
+      addLog(id + '. ' + label + ' → yanıt yok', 'fail');
+    }
+    persist(); updateStatus(id); updateCounters();
+  }
+  var t = setTimeout(function(){ settle(false); }, 1200);
+  function visHandler(){
+    if (document.hidden){
+      clearTimeout(t);
+      document.removeEventListener('visibilitychange', visHandler);
+      settle(true);
+    }
+  }
+  document.addEventListener('visibilitychange', visHandler);
+  window.addEventListener('blur', function once(){ window.removeEventListener('blur', once); });
+}
+
+/* WebView anchor'ı yutarsa: GET form ile aynı URI'yi ikinci user-gesture varyantı olarak dene. */
+function submitForm(uri){
+  var f = document.createElement('form');
+  f.method = 'GET';
+  f.action = uri;
+  f.style.display = 'none';
+  document.body.appendChild(f);
+  try { f.submit(); } catch (e) { addLog('form submit başarısız: ' + e.message, 'fail'); }
+  setTimeout(function(){ f.remove(); }, 1500);
+}
+
+async function runSequence(){
+  if (seqRunning) return;
+  seqRunning = true;
+  addLog('▶ S4 sırası başladı (A → B → C)', 'try');
+  var sirali = ITEMS.slice().sort(function(a,b){
+    var g = {A:0,B:1,C:2};
+    return (g[a.grup]-g[b.grup]) || (a.prio-b.prio);
+  });
+  for (var i = 0; i < sirali.length; i++){
+    if (!seqRunning) break;
+    if (state[sirali[i].id] && state[sirali[i].id].status === 'success') continue;
+    var link = document.querySelector('a[data-id="' + sirali[i].id + '"]');
+    if (link){
+      link.click();
+      await new Promise(function(r){ setTimeout(r, 1500); });
+    }
+    if (document.hidden){ addLog('ekran değişti → sıra durdu (elle ✓/✗ işaretle)', 'ok'); break; }
+  }
+  seqRunning = false;
+  addLog('S4 sırası tamamlandı', 'ok');
+}
+
+function exportState(){
+  var data = {ua: navigator.userAgent, time: new Date().toISOString(), state: state, log: log.slice(0, 40)};
+  ToggKit.copy(JSON.stringify(data, null, 2))
+    .then(function(){ alert('Durum + log kopyalandı'); })
+    .catch(function(){ alert('Kopyalanamadı'); });
+}
+function clearAll(){
+  if (confirm('Tüm durum ve log temizlensin mi?')){
+    state = {}; log = [];
+    try { localStorage.removeItem(STORE_KEY); } catch (e) {}
+    ToggKit.$('log').innerHTML = '<div style="color:#607d8b">Temizlendi.</div>';
+    render();
+  }
+}
+
+(function initVerdict(){
+  var ua = navigator.userAgent || '';
+  var v = ToggKit.verdict(ua);
+  var box = ToggKit.$('verdict');
+  box.className = v.c;
+  box.querySelector('.big').textContent = v.t;
+  box.querySelector('.why').textContent = v.s;
+  var m = /nores=([^&]+)/.exec(location.hash || '');
+  if (m){ history.replaceState(null, '', location.pathname + location.search); }
+})();
+
+render();
+</script>
+</body>
+</html>

@@ -13,6 +13,7 @@
   <a href="index.html">🎯 Bypass Paneli</a>
   <a class="active" href="probe.html">🔬 Ortam / WebView</a>
   <a href="klavye.html">⌨️ Klavye / Seçim</a>
+  <a href="intent.html">🚪 S4 Intent</a>
 </nav>
 
 <h1>Togg IVI — Ortam / WebView Ölçüm</h1>
@@ -217,10 +218,12 @@ function scanEnv(){
   } catch (err){ log('iframe baseline yok: ' + err.message); }
 
   var candidates = ['Android','JsBridge','jsBridge','nativeBridge','AndroidBridge','bridge','appInterface','togg','Togg','native','Native','webkit','chrome','__bridge__','AndroidInterface','jsInterface'];
+  var OWN = ['ToggKit'];  /* sayfanın kendi eklediği global'ler — native köprü değildir */
   var found = [];
   var names;
   try { names = Object.getOwnPropertyNames(window); } catch (err){ names = []; }
   names.forEach(function(k){
+    if (OWN.indexOf(k) !== -1) return;
     var isCandidate = candidates.indexOf(k) !== -1;
     var injected = defaults ? !defaults.has(k) : isCandidate;
     if (!isCandidate && !injected) return;
