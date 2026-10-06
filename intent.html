@@ -323,6 +323,33 @@ function clearAll(){
 })();
 
 render();
+
+// EXPLOIT LINKLERİ
+document.addEventListener('DOMContentLoaded', function() {
+  var exploitBox = document.createElement('div');
+  exploitBox.innerHTML = `
+    <div style="border: 2px solid #f44336; background-color: #ffebee; margin: 20px 0; padding: 15px;">
+      <h3>🎯 KRİTİK EXPLOİT LİNKLERİ</h3>
+      <p><strong>Önemli:</strong> Bu linklere tıklamadan önce ne yaptığınızı bildiğinizden emin olun!</p>
+      
+      <a href="intent://x/#Intent;action=android.settings.APPLICATION_DEVELOPMENT_SETTINGS;launchFlags=0x10000000;S.browser_fallback_url=https%3A%2F%2Fphomphachi.github.io%2FToogx%2Fintent.html%23nores%3D1728234567;end" 
+         style="background-color: #f44336; color: white; display: block; margin: 10px 0; padding: 10px; text-align: center; text-decoration: none; border-radius: 5px;">
+        🚀 Geliştirici Seçeneklerini Aç
+      </a>
+      
+      <a href="intent://x/#Intent;action=android.settings.SETTINGS;launchFlags=0x10000000;S.browser_fallback_url=https%3A%2F%2Fphomphachi.github.io%2FToogx%2Fintent.html%23nores%3D1728234568;end" 
+         style="background-color: #2196F3; color: white; display: block; margin: 10px 0; padding: 10px; text-align: center; text-decoration: none; border-radius: 5px;">
+        ⚙️ Ana Ayarlar
+      </a>
+      
+      <a href="intent://com.togg.toggmobile/#Intent;package=com.togg.toggmobile;S.browser_fallback_url=https%3A%2F%2Fphomphachi.github.io%2FToogx%2Fintent.html%23nores%3D1728234569;end" 
+         style="background-color: #4CAF50; color: white; display: block; margin: 10px 0; padding: 10px; text-align: center; text-decoration: none; border-radius: 5px;">
+        🚗 Togg SuperApp'i Başlat
+      </a>
+    </div>
+  `;
+  document.body.insertBefore(exploitBox, document.querySelector('footer') || document.body.lastChild);
+});
 </script>
 </body>
 </html>

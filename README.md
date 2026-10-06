@@ -17,6 +17,7 @@ Kendi aracının (Togg) IVI/WebView yüzeyini **park hâlinde** test eden statik
 | `probe.html` | Ortam ölçümü — UA/kiosk tipi, köprü taraması, şema matrisi, file/`window.open` testleri |
 | `klavye.html` | Klavye + metin-seçim menüsü testi, giriş gecikmesi ölçer, manuel geçiş yolları |
 | `portal.html` | Captive-portal yükü — sistem WebView'inde OOB vektörlerini sırayla dener, kaçış sinyalini loglar |
+| `exploit.html` | **YENİ!** WebView exploit paneli — kritik sistem erişimi için önceden hazırlanmış intent exploit'leri |
 | `captive_server.py` | Laptop AP'si için minimal portal sunucusu (bağımlılıksız): DNS hijack + HTTP `302` → `portal.html` |
 
 ## Kullanım
