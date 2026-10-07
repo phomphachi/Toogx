@@ -8,6 +8,12 @@ Iki servis:
   * DNS  (UDP :53)  -> TUM A sorgularini laptop IP'sine cevirir (AAAA bos -> A'ya duser)
   * HTTP (TCP :80)  -> her yolu 302 ile /portal.html'e yonlendirir; static dosyalari serve eder
 
+Proxy (adres cubugu olmayan kiosk WebView icin):
+  * HTTP GET /p?u=<url>  -> hedef sayfayi sunucu tarafi ceker, HTML/CSS icindeki
+    linkleri /p?u=... uzerinden yeniden yazar ve ayni origin'den servis eder.
+    Boylece HTTPS hedefler bile CA/sertifika olmadan gezilebilir (laptop HTTP'de kalir).
+  * GET /p  (u yok)      -> basit URL formu.
+
 Kullanim (YONETICI PowerShell):
   python captive_server.py                 # IP otomatik (192.168.137.1)
   python captive_server.py --ip 192.168.137.1 --http-port 80 --dns-port 53
@@ -22,16 +28,82 @@ NOT: Mobile Hotspot acikken ICS kendi DNS'ini :53'e baglayabilir. O durumda once
 """
 import argparse
 import os
+import re
 import socket
 import struct
 import sys
 import threading
+import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 MIME = {".html": "text/html; charset=utf-8", ".js": "application/javascript",
         ".css": "text/css", ".json": "application/json", ".ico": "image/x-icon",
         ".png": "image/png", ".txt": "text/plain; charset=utf-8"}
+
+PROXY_UA = ("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/100.0.4896.127 Mobile Safari/537.36")
+PROXY_SCHEMES = ("http", "https")
+PROXY_SKIP_SCHEMES = ("data", "javascript", "mailto", "tel", "sms", "blob",
+                      "about", "geo", "market", "intent", "file", "content")
+PROXY_TIMEOUT = 20.0
+
+_ATTR_RE = re.compile(r"""(\b(?:href|src|action|poster)\s*=\s*)(["'])(.*?)\2""", re.I | re.S)
+_SRCSET_RE = re.compile(r"""(\bsrcset\s*=\s*)(["'])(.*?)\2""", re.I | re.S)
+_CSSURL_RE = re.compile(r"""url\(\s*(['"]?)(.*?)\1\s*\)""", re.I | re.S)
+_CSSIMPORT_RE = re.compile(r"""(@import\s+)(["'])(.*?)\2""", re.I | re.S)
+
+
+def _proxy_wrap(url):
+    """Mutlak URL'yi /p?u= bicimine cevir (yuzde-encode; hedefteki & bozmaz)."""
+    return "/p?u=" + urllib.parse.quote(url, safe="")
+
+
+def _proxy_abs(base, raw):
+    """raw linkini base'e gore cozer; yalniz http/https ise proxy'ye sarar, degilse dokunmaz."""
+    raw = (raw or "").strip()
+    if not raw or raw.startswith("#"):
+        return raw
+    scheme = raw.split(":", 1)[0].lower() if ":" in raw else ""
+    if scheme in PROXY_SKIP_SCHEMES:
+        return raw
+    try:
+        absu = urllib.parse.urljoin(base, raw)
+    except ValueError:
+        return raw
+    if urllib.parse.urlparse(absu).scheme.lower() not in PROXY_SCHEMES:
+        return raw
+    return _proxy_wrap(absu)
+
+
+def _rewrite_css(text, base):
+    def _url(m):
+        return "url(" + m.group(1) + _proxy_abs(base, m.group(2)) + m.group(1) + ")"
+    text = _CSSURL_RE.sub(_url, text)
+
+    def _imp(m):
+        return m.group(1) + m.group(2) + _proxy_abs(base, m.group(3)) + m.group(2)
+    return _CSSIMPORT_RE.sub(_imp, text)
+
+
+def _rewrite_html(text, base):
+    def _attr(m):
+        return m.group(1) + m.group(2) + _proxy_abs(base, m.group(3)) + m.group(2)
+    text = _ATTR_RE.sub(_attr, text)
+
+    def _srcset(m):
+        parts = []
+        for cand in m.group(3).split(","):
+            cand = cand.strip()
+            if not cand:
+                continue
+            bits = cand.split(None, 1)
+            bits[0] = _proxy_abs(base, bits[0])
+            parts.append(" ".join(bits))
+        return m.group(1) + m.group(2) + ", ".join(parts) + m.group(2)
+    text = _SRCSET_RE.sub(_srcset, text)
+    return _rewrite_css(text, base)
 
 
 def hosts_ip():
@@ -162,6 +234,84 @@ class Portal(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(govde)
 
+    def _html(self, govde, kod=200):
+        self.send_response(kod)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(govde)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(govde)
+
+    def _proxy_hata(self, msg):
+        govde = ("<!DOCTYPE html><meta charset='utf-8'>"
+                 "<meta name=viewport content='width=device-width,initial-scale=1'>"
+                 "<body style='font:16px sans-serif;background:#111;color:#eee;padding:24px'>"
+                 "<b>Proxy</b><br>" + msg +
+                 "<br><br><a style='color:#4da3ff' href='/p'>&larr; yeni URL</a></body>").encode("utf-8")
+        self._html(govde)
+
+    def _proxy_form(self):
+        govde = ("<!DOCTYPE html><meta charset='utf-8'>"
+                 "<meta name=viewport content='width=device-width,initial-scale=1'>"
+                 "<body style='font:18px sans-serif;background:#111;color:#eee;padding:24px'>"
+                 "<h2>&#127760; Proxy</h2>"
+                 "<form method='get' action='/p'>"
+                 "<input name='u' autofocus autocomplete='off' spellcheck='false' "
+                 "style='width:72%;padding:10px;font-size:16px' placeholder='https://...'> "
+                 "<button style='padding:10px 16px;font-size:16px'>Ac</button></form>"
+                 "<p style='opacity:.7'>Linkler otomatik olarak /p?u= uzerinden yeniden yazilir.</p>"
+                 "</body>").encode("utf-8")
+        self._html(govde)
+
+    def _proxy_get(self, url):
+        p = urllib.parse.urlparse(url)
+        if p.scheme.lower() not in PROXY_SCHEMES or not p.netloc:
+            self._proxy_hata("Gecersiz URL (yalniz http/https).")
+            return
+        istek = urllib.request.Request(url, headers={
+            "User-Agent": PROXY_UA,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "tr,en;q=0.8",
+        })
+        try:
+            with urllib.request.urlopen(istek, timeout=PROXY_TIMEOUT) as y:
+                ham = y.read()
+                ctype = y.headers.get("Content-Type", "application/octet-stream")
+                son = y.geturl() or url
+        except Exception as e:  # proxy siniri: hatayi kullaniciya goster, gizleme
+            self._proxy_hata("Proxy hata: %s" % e)
+            return
+        ana, _, cset = ctype.partition(";")
+        ana = ana.strip().lower()
+        if ana in ("text/html", "application/xhtml+xml"):
+            charset = "utf-8"
+            m = re.search(r"charset=([\w\-]+)", cset, re.I)
+            if m:
+                charset = m.group(1)
+            try:
+                metin = ham.decode(charset, "replace")
+            except LookupError:
+                metin = ham.decode("utf-8", "replace")
+            govde = _rewrite_html(metin, son).encode("utf-8")
+            out_ct = "text/html; charset=utf-8"
+        elif ana == "text/css":
+            try:
+                metin = ham.decode("utf-8", "replace")
+            except Exception:
+                metin = ""
+            govde = _rewrite_css(metin, son).encode("utf-8")
+            out_ct = "text/css; charset=utf-8"
+        else:
+            govde = ham
+            out_ct = ctype
+        self.send_response(200)
+        self.send_header("Content-Type", out_ct)
+        self.send_header("Content-Length", str(len(govde)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(govde)
+
     def _serve(self, ad, gonder=True):
         yol = os.path.join(BASE, os.path.basename(ad))
         if not os.path.isfile(yol):
@@ -179,6 +329,14 @@ class Portal(BaseHTTPRequestHandler):
 
     def do_GET(self):
         yol = self.path.split("?", 1)[0]
+        if yol == "/p":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            hedef = (q.get("u") or [""])[0].strip()
+            if hedef:
+                self._proxy_get(hedef)
+            else:
+                self._proxy_form()
+            return
         if yol in ("/", "/portal.html"):
             self._serve("portal.html")
         elif yol in ("/_/captiveportal", "/captiveportal", "/captive-portal"):

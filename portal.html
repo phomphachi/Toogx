@@ -58,6 +58,15 @@
   </div>
 </div>
 
+<div class="box">
+  <h3>🌐 Proxy'den web (adres çubuğu yok → buradan)</h3>
+  <div class="row2">
+    <input type="text" id="px-url" placeholder="https://github.com" autocomplete="off" spellcheck="false">
+    <button class="primary" onclick="proxyGo()">Aç</button>
+  </div>
+  <div class="note">Hedef sayfa laptop'taki <code>/p?u=</code> üzerinden çekilir; HTTPS bile CA gerekmez.</div>
+</div>
+
 <div class="box"><h3>Kayıt</h3><div class="log-box" id="log"></div></div>
 
 <footer><a href="index.html">🎯 Bypass</a> · Kendi aracın, park hâlinde.</footer>
@@ -97,6 +106,14 @@ function tumunuDene(){
   var i=0;
   (function adim(){ if(i>=sira.length){ log('--- dizi bitti ---','try'); return; } sira[i++](); setTimeout(adim,1600); })();
 }
+function proxyGo(){
+  var v=ToggKit.$('px-url').value.trim();
+  if(!v) return;
+  if(!/^https?:\/\//i.test(v)) v='https://'+v;
+  log('proxy → '+v,'try');
+  location.href='/p?u='+encodeURIComponent(v);
+}
+ToggKit.$('px-url').addEventListener('keydown', function(e){ if(e.key==='Enter') proxyGo(); });
 ToggKit.$('ua').textContent = (navigator.userAgent||'').slice(0,60);
 log('portal hazır — vektörleri dene','try');
 </script>

@@ -22,6 +22,20 @@
   <a style="display:inline-block;margin-top:8px;padding:10px 18px;background:#e63946;color:#fff;border-radius:8px;font-weight:700;text-decoration:none" href="exploit.html#auto">▶ exploit.html aç (otomatik başlar)</a>
 </div>
 
+<div class="box" style="border:2px solid #2196f3;background:#0d1b2a">
+  <h3>🌐 Adres Çubuğu (yoksa buradan gir)</h3>
+  <div class="row2">
+    <input type="text" id="nav-url" placeholder="github.com veya https://..." autocomplete="off" spellcheck="false">
+    <button class="primary" onclick="navGo()">Git →</button>
+  </div>
+  <div class="note">Doğrudan gider (şema yoksa https:// eklenir). WebView internete çıkabiliyorsa en basit yol.</div>
+  <div class="row2" style="margin-top:8px">
+    <input type="text" id="proxy-base" placeholder="laptop proxy: http://192.168.137.1" value="http://192.168.137.1" autocomplete="off" spellcheck="false">
+    <button onclick="navProxy()">Proxy ile aç</button>
+  </div>
+  <div class="note">WebView yalnız laptop AP'sine çıkıyorsa: hedefi <code>&lt;laptop&gt;/p?u=…</code> proxy'sinden çeker (HTTPS bile, CA gerekmez).</div>
+</div>
+
 <h1>Togg IVI — Bypass Paneli</h1>
 <p class="sub">Kiosk WebView'inde native Ayarlar / app-link / şema yüzeylerini dener. Sonuç otomatik işaretlenir.</p>
 
@@ -380,6 +394,34 @@ function clearAll(){
   box.querySelector('.why').textContent = v.s;
   var m = /nores=([^&]+)/.exec(location.hash || '');
   if (m){ history.replaceState(null, '', location.pathname + location.search); }
+})();
+
+function _normUrl(v){
+  v = (v || '').trim();
+  if (!v) return '';
+  if (!/^[a-z][a-z0-9+.\-]*:/i.test(v)) v = 'https://' + v;
+  return v;
+}
+function navGo(){
+  var v = _normUrl(ToggKit.$('nav-url').value);
+  if (!v) return;
+  addLog('URL → ' + v, 'try');
+  location.href = v;
+}
+function navProxy(){
+  var base = (ToggKit.$('proxy-base').value || '').trim().replace(/\/+$/, '');
+  var v = _normUrl(ToggKit.$('nav-url').value);
+  if (!base || !v) return;
+  try { localStorage.setItem('togg_proxy_base', base); } catch (e) {}
+  var u = base + '/p?u=' + encodeURIComponent(v);
+  addLog('Proxy → ' + u, 'try');
+  location.href = u;
+}
+(function initNav(){
+  var pb = ToggKit.$('proxy-base');
+  try { var s = localStorage.getItem('togg_proxy_base'); if (s) pb.value = s; } catch (e) {}
+  ToggKit.$('nav-url').addEventListener('keydown', function(e){ if (e.key === 'Enter') navGo(); });
+  pb.addEventListener('keydown', function(e){ if (e.key === 'Enter') navProxy(); });
 })();
 
 render();
