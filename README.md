@@ -4,7 +4,7 @@ Kendi aracının (Togg) IVI/WebView yüzeyini **park hâlinde** test eden statik
 
 ## 🔗 Doğrudan geçiş (canlı)
 - **Panel:** https://phomphachi.github.io/Toogx/
-- **Ortam / WebView:** https://phomphachi.github.io/Toogx/probe.html
+- **Ortam / WebView:** https://phomphachi.github.io/Toogx/probe.html#auto  (açılınca oto-recon + ntfy)
 - **Klavye / Seçim:** https://phomphachi.github.io/Toogx/klavye.html
 - **Exploit / Oto-Test:** https://phomphachi.github.io/Toogx/exploit.html#auto  (açılınca otomatik başlar)
 - **S4 Intent:** https://phomphachi.github.io/Toogx/intent.html
