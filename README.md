@@ -6,7 +6,7 @@ Kendi aracının (Togg) IVI/WebView yüzeyini **park hâlinde** test eden statik
 - **Panel:** https://phomphachi.github.io/Toogx/
 - **Ortam / WebView:** https://phomphachi.github.io/Toogx/probe.html
 - **Klavye / Seçim:** https://phomphachi.github.io/Toogx/klavye.html
-- **Exploit / Oto-Test:** https://phomphachi.github.io/Toogx/exploit.html
+- **Exploit / Oto-Test:** https://phomphachi.github.io/Toogx/exploit.html#auto  (açılınca otomatik başlar)
 - **S4 Intent:** https://phomphachi.github.io/Toogx/intent.html
 
 > Not: `github.com/.../blob/...` adresi **kaynak kodu** gösterir, sayfayı çalıştırmaz.
