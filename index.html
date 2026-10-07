@@ -425,6 +425,13 @@ function navProxy(){
 })();
 
 render();
+
+(function autoResume(){
+  var want = /(^|[#&])auto/.test(location.hash || '');
+  var pend = false;
+  try{ pend = localStorage.getItem('toggx_run') === '1'; }catch(e){}
+  if (want || pend){ location.replace('exploit.html#auto'); }
+})();
 </script>
 </body>
 </html>

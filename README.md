@@ -1,3 +1,11 @@
+# ▶ ÇALIŞTIR: https://phomphachi.github.io/Toogx/exploit.html#auto
+
+> Aracın WebView'inde bu adresi aç → test **otomatik başlar**, sonuçlar `ntfy.sh/toggx-ivi-7f3k9q2m`'e düşer.
+> Ekran kararır/blackout olursa sayfayı yeniden aç: **kaldığı yerden devam eder, baştan başlamaz.**
+> Kök `https://phomphachi.github.io/Toogx/` de çalışan bir test varsa açılışta otomatik `exploit.html#auto`'ya geçer.
+
+---
+
 # Toogx — Togg IVI WebView Paneli
 
 Kendi aracının (Togg) IVI/WebView yüzeyini **park hâlinde** test eden statik sayfalar.
