@@ -11,7 +11,8 @@
 <script>
 (function(){
   try{ localStorage.setItem('toggx_run','1'); }catch(e){}
-  try{ location.replace('exploit.html#auto'); }catch(e){}
+  var buster = 'v=' + Date.now();
+  try{ location.replace('exploit.html?'+buster+'#auto'); }catch(e){}
 })();
 </script>
 <noscript><a href="exploit.html#auto">Oto-testi aç</a></noscript>
