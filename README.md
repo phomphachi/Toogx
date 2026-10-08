@@ -1,5 +1,6 @@
-# ▶ ÇALIŞTIR: https://phomphachi.github.io/Toogx/exploit.html#auto
+# ▶ ÇALIŞTIR (tek tık, HİÇBİR ŞEY YAZMA): https://phomphachi.github.io/Toogx/go.html
 
+> Adres çubuğu olmayan kiosk WebView'i için: bu linke **tıkla**, gerisi kendiliğinden olur (hash gerekmez).
 > Aracın WebView'inde bu adresi aç → test **otomatik başlar**, sonuçlar `ntfy.sh/toggx-ivi-7f3k9q2m`'e düşer.
 > Ekran kararır/blackout olursa sayfayı yeniden aç: **kaldığı yerden devam eder, baştan başlamaz.**
 > Kök `https://phomphachi.github.io/Toogx/` de çalışan bir test varsa açılışta otomatik `exploit.html#auto`'ya geçer.
@@ -11,6 +12,7 @@
 Kendi aracının (Togg) IVI/WebView yüzeyini **park hâlinde** test eden statik sayfalar.
 
 ## 🔗 Doğrudan geçiş (canlı)
+- **▶ TEK TIK ÇALIŞTIR (adres çubuğu gerekmez):** https://phomphachi.github.io/Toogx/go.html  (hash'siz; açılınca `exploit.html#auto`'ya geçer)
 - **Panel:** https://phomphachi.github.io/Toogx/
 - **Ortam / WebView:** https://phomphachi.github.io/Toogx/probe.html#auto  (açılınca oto-recon + ntfy)
 - **Klavye / Seçim:** https://phomphachi.github.io/Toogx/klavye.html

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>Başlatılıyor…</title>
+</head>
+<body style="background:#0d1117;color:#e6edf3;font:16px system-ui;padding:24px">
+<p id="s">Başlatılıyor… oto-test açılıyor. Bu sayfa kapanınca hiçbir şey yapmana gerek yok.</p>
+<script>
+(function(){
+  try{ localStorage.setItem('toggx_run','1'); }catch(e){}
+  try{ location.replace('exploit.html#auto'); }catch(e){}
+})();
+</script>
+<noscript><a href="exploit.html#auto">Oto-testi aç</a></noscript>
+</body>
+</html>
