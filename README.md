@@ -2,7 +2,8 @@
 
 > Adres çubuğu olmayan kiosk WebView'i için: bu linke **tıkla**, gerisi kendiliğinden olur (hash gerekmez).
 > Aracın WebView'inde bu adresi aç → test **otomatik başlar**, sonuçlar `ntfy.sh/toggx-ivi-7f3k9q2m`'e düşer.
-> Ekran kararır/blackout olursa sayfayı yeniden aç: **kaldığı yerden devam eder, baştan başlamaz.**
+> 🛡️ **Sıkı mod (varsayılan):** her vektör sandbox'lı bir iframe'de denenir; web sayfası **üst çerçeveyi hiç terk etmez** (üst-gezinme/pencere-açma kapalı). Sayfa seni bırakmaz → GitHub'a baştan girmen gerekmez.
+> Ekran kararır/blackout olsa bile her adım anında ntfy'ye gider; sayfayı yeniden açınca **kaldığı yerden devam eder, baştan başlamaz.**
 > Kök `https://phomphachi.github.io/Toogx/` de çalışan bir test varsa açılışta otomatik `exploit.html#auto`'ya geçer.
 
 ---
@@ -16,8 +17,8 @@ Kendi aracının (Togg) IVI/WebView yüzeyini **park hâlinde** test eden statik
 - **Panel:** https://phomphachi.github.io/Toogx/
 - **Ortam / WebView:** https://phomphachi.github.io/Toogx/probe.html#auto  (açılınca oto-recon + ntfy)
 - **Klavye / Seçim:** https://phomphachi.github.io/Toogx/klavye.html
-- **Exploit / Oto-Test:** https://phomphachi.github.io/Toogx/exploit.html#auto  (açılınca otomatik başlar)
-- **Exploit / Oto-Test (DOĞRUDAN NAV):** https://phomphachi.github.io/Toogx/exploit.html#auto&nav  (`iframe` yok; `location.href` ile şema dener, "sayfa kaldı" = blok, "terk edildi" = sinyal)
+- **Exploit / Oto-Test:** https://phomphachi.github.io/Toogx/exploit.html#auto  (açılınca otomatik başlar; **sıkı mod = üst sayfa asla terk edilmez**)
+- **Exploit / Oto-Test (SERBEST NAV — dikkat):** https://phomphachi.github.io/Toogx/exploit.html#auto&nav  (`sandbox` yok; `location.href` ile şema dener — "sayfa kaldı" = blok, "terk edildi" = sinyal. Bu modda sayfa kaybolabilir; sadece bilinçli kullan.)
 - **S4 Intent:** https://phomphachi.github.io/Toogx/intent.html
 
 > Not: `github.com/.../blob/...` adresi **kaynak kodu** gösterir, sayfayı çalıştırmaz.
