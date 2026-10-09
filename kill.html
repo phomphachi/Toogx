@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>Togg IVI — KILL-Flag Yüzey Taraması</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="tabs">
+  <a href="index.html">🎯 Bypass Paneli</a>
+  <a href="probe.html">🔬 Ortam / WebView</a>
+  <a href="klavye.html">⌨️ Klavye / Seçim</a>
+  <a href="intent.html">🚪 S4 Intent</a>
+  <a href="uach.html">🧬 Sürüm/UA-CH</a>
+  <a href="surface.html">🕸️ JS Yüzey</a>
+  <a class="active" href="kill.html">☠️ KILL Tarama</a>
+</nav>
+
+<h1>☠️ KILL-Flag Yüzey Taraması</h1>
+<p class="sub">Kiosk WebView'de <b>native köprü</b> var mı ve <b>KILL-flag</b> metot (open/start/intent/exec/file/can/vehicle…) taşıyor mu? Okur, <b>çağırmaz</b>. Her bulgu anında <b>ntfy</b>'ye akar. KILL metot çıkarsa sonraki adım: imza anla → güvenli probe (ayrı sayfa, <b>insan onaylı</b>).</p>
+
+<div id="verdict" class="try"><div class="big">…</div><div class="why">taranıyor</div></div>
+
+<div class="toolbar">
+  <button class="primary" onclick="location.reload()">↻ Yeniden tara</button>
+  <button onclick="sendSummary()">📡 Özet gönder</button>
+  <button onclick="copyOut()">📋 Kopyala</button>
+</div>
+
+<h2 class="section-title">Canlı beacon (+ ntfy akışı)</h2>
+<pre id="o" class="log-box">init</pre>
+
+<footer>Kendi aracın üzerinde, park hâlinde kullan · <a href="surface.html">← JS Yüzey</a></footer>
+
+<script src="common.js"></script>
+<script>
+"use strict";
+var NT = "https://ntfy.sh/toggx-ivi-7f3k9q2m";
+var kills = [], bridgesFound = [], info = {};
+var PRE = "[kill] ";
+
+function oAppend(s){ var o=document.getElementById("o"); if(o) o.textContent += "\n" + s; }
+function post(body){
+  try{ fetch(NT,{method:"POST",mode:"no-cors",body:PRE + body,keepalive:true}); }catch(e){}
+}
+function beacon(key, val){
+  try{ var msg = key + " " + val; oAppend(msg); post(msg); }catch(e){}
+}
+
+/* ---- 1) BRIDGE ENUMERATION (top + iframe) ---- */
+var KILL = ['open','start','intent','exec','run','shell','file','read','write','install','url',
+  'load','navigat','share','print','get.*propert','set.*propert','can','vehicle'];
+var killRe = new RegExp(KILL.join('|'), 'i');
+var COMMON = ['AndroidInterface','JSInterface','NativeBridge','WebAppInterface','CarAPI','VehicleAPI',
+  'CarInterface','VehicleInterface','IVIInterface','gmApi','fordApi','toyotaApi','bmwApi','mercedesApi',
+  'hondaApi','audiApi','vwApi','hyundaiApi','kiaApi','nissanApi','volvoApi','polestarApi','teslaApi',
+  'bridge','app','android','native','nativeApi','JSBridge','webkit','external','host','service',
+  'deviceApi','systemApi','carService','vehicleService','hmiApi','mediaApi','navApi','climateApi',
+  'phoneApi','AOSP','car','vehicle','ivi','hmi'];
+
+function scanObject(obj, label){
+  if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return;
+  var methods = [];
+  try {
+    var names = Object.getOwnPropertyNames(obj);
+    for (var i=0; i<names.length; i++){
+      var n = names[i], t = "?";
+      try { t = typeof obj[n]; } catch(e) { t = "err"; }
+      var isKill = killRe.test(n);
+      methods.push(n + ":" + t + (isKill ? " ⚠KILL" : ""));
+      if (isKill) kills.push(label + "." + n);
+    }
+  } catch(e){}
+  if (methods.length > 0){
+    bridgesFound.push(label + " = " + methods.join(" | "));
+    beacon("BRIDGE_" + label, methods.join(" | "));
+  }
+}
+
+function bridgeEnum(){
+  var foundTop = [];
+  COMMON.forEach(function(name){
+    try {
+      var v = window[name];
+      if (v !== undefined && v !== null){ foundTop.push(name + "[" + typeof v + "]"); scanObject(v, name.toUpperCase()); }
+    } catch(e){}
+  });
+  beacon("BRIDGE_TOP", foundTop.length > 0 ? foundTop.join(", ") : "none/" + COMMON.length);
+
+  try {
+    var f = document.createElement('iframe');
+    f.style.display = 'none'; f.src = 'about:blank';
+    document.body.appendChild(f);
+    setTimeout(function(){
+      try {
+        var foundIfr = [];
+        COMMON.forEach(function(name){
+          try {
+            var v = f.contentWindow[name];
+            if (v !== undefined && v !== null){ foundIfr.push(name + "[" + typeof v + "]"); scanObject(v, "IFR_" + name.toUpperCase()); }
+          } catch(e){}
+        });
+        beacon("BRIDGE_IFRAME", foundIfr.length > 0 ? foundIfr.join(", ") : "none");
+      } catch(e){ beacon("BRIDGE_IFRAME_ERR", e.message); }
+    }, 100);
+  } catch(e){ beacon("BRIDGE_IFRAME_FAIL", e.message); }
+}
+
+/* ---- 2) GLOBALS ENUMERATION (baseline-diff + prototip) ---- */
+function iframeBaseline(){
+  try {
+    var f = document.createElement('iframe');
+    f.style.display = 'none'; f.src = 'about:blank';
+    document.body.appendChild(f);
+    var s = new Set(Object.getOwnPropertyNames(f.contentWindow));
+    f.remove(); return s;
+  } catch(e){ return null; }
+}
+
+function globalsEnum(base){
+  var nonStd = [], allNames = [];
+  try { allNames = Object.getOwnPropertyNames(window); } catch(e){ beacon("GLOBALS_ERR", e.message); return; }
+  if (base){
+    allNames.forEach(function(k){
+      if (base.has(k) || k === "ToggKit") return;
+      var t = "?"; try { t = typeof window[k]; } catch(e){ t = "getter_err"; }
+      nonStd.push(k + ":" + t);
+    });
+  } else {
+    var STD = new Set(['document','window','navigator','location','history','screen','console','fetch',
+      'XMLHttpRequest','WebSocket','localStorage','sessionStorage','indexedDB','crypto','performance',
+      'Promise','Map','Set','Array','Object','String','Number','Boolean','Function','Symbol','Proxy',
+      'Reflect','JSON','Math','Date','RegExp','Error','parseInt','parseFloat','isNaN','isFinite',
+      'encodeURIComponent','decodeURIComponent','setTimeout','setInterval','clearTimeout','clearInterval',
+      'requestAnimationFrame','self','top','parent','frames','opener','close','closed','focus','blur',
+      'open','postMessage','addEventListener','removeEventListener','dispatchEvent','getComputedStyle',
+      'matchMedia','getSelection','scrollTo','scrollBy','name','status','innerWidth','innerHeight',
+      'outerWidth','outerHeight','origin','URL','URLSearchParams','FormData','Headers','Request','Response',
+      'AbortController','TextEncoder','TextDecoder','ReadableStream','WritableStream','TransformStream',
+      'WeakMap','WeakSet','WeakRef','FinalizationRegistry','BigInt','crossOriginIsolated','isSecureContext',
+      'customElements','EventSource','Notification','permissions','serviceWorker','caches','visualViewport',
+      'globalThis','Event','CustomEvent','Node','Element','HTMLElement','Document','Storage','Blob','File',
+      'FileReader','FileList','Image','ImageData','ImageBitmap','Audio','AudioContext','AudioBuffer','Path2D']);
+    allNames.forEach(function(k){
+      if (STD.has(k) || k.indexOf('on') === 0) return;
+      var t = "?"; try { t = typeof window[k]; } catch(e){ t = "getter_err"; }
+      nonStd.push(k + ":" + t);
+    });
+    try {
+      var proto = Object.getPrototypeOf(window);
+      if (proto && proto !== Object.prototype){
+        Object.getOwnPropertyNames(proto).forEach(function(pk){
+          if (STD.has(pk) || pk.indexOf('on') === 0) return;
+          var pt = "?"; try { pt = typeof proto[pk]; } catch(e){ pt = "getter_err"; }
+          nonStd.push(pk + ":" + pt + "(proto)");
+        });
+      }
+    } catch(e){}
+  }
+  info.globals = nonStd;
+  beacon("GLOBALS", nonStd.length > 0 ? nonStd.join(", ") : "none/" + allNames.length);
+}
+
+/* ---- 3) GPU FINGERPRINT (önce SwiftShader kontrol) ---- */
+function gpuFingerprint(){
+  try {
+    var c = document.createElement('canvas');
+    var gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+    if (!gl){ beacon("GPU", "NO_WEBGL"); return; }
+    var vendor = "?", renderer = "?";
+    try {
+      var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      if (dbg){ vendor = gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL); renderer = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL); }
+      else { vendor = gl.getParameter(gl.VENDOR); renderer = gl.getParameter(gl.RENDERER); }
+    } catch(e){}
+    beacon("GPU_VENDOR", vendor);
+    beacon("GPU_RENDERER", renderer);
+    var isSwift = /swiftshader|software|llvmpipe|angle \(software/i.test(String(renderer));
+    beacon("GPU_IS_SWIFTSHADER", String(isSwift));
+    if (isSwift) beacon("GPU_NOTE", "software GL → hardware GPU pipeline DEAD");
+    beacon("GL_VERSION", gl.getParameter(gl.VERSION));
+    beacon("GL_SHADING", gl.getParameter(gl.SHADING_LANGUAGE_VERSION));
+    try {
+      var exts = gl.getSupportedExtensions();
+      if (exts){ beacon("GL_EXT_COUNT", String(exts.length)); beacon("GL_EXT_SAMPLE", exts.slice(0,12).join(",")); }
+    } catch(e){}
+    info.gpu = { vendor: vendor, renderer: renderer, swift: isSwift };
+  } catch(e){ beacon("GPU_ERR", e.message); }
+}
+
+/* ---- 4) DEVICE FINGERPRINT ---- */
+function deviceFingerprint(){
+  try { beacon("DeviceMemory", String(navigator.deviceMemory || "N/A")); } catch(e){}
+  try { beacon("HardwareConcurrency", String(navigator.hardwareConcurrency || "N/A")); } catch(e){}
+  try { beacon("Platform", navigator.platform || "N/A"); } catch(e){}
+  try { beacon("DPR", String(window.devicePixelRatio || "N/A")); } catch(e){}
+  try { beacon("Screen", screen.width + "x" + screen.height + "x" + screen.colorDepth); } catch(e){}
+  try { beacon("Language", navigator.language || "N/A"); } catch(e){}
+  try { beacon("CookieEnabled", String(navigator.cookieEnabled)); } catch(e){}
+  try { beacon("Protocol", location.protocol); } catch(e){}
+  try { beacon("Origin", location.origin || "opaque"); } catch(e){}
+  try { beacon("Href", location.href.substring(0,200)); } catch(e){}
+  info.env = { dm: navigator.deviceMemory || "N/A", hc: navigator.hardwareConcurrency || "N/A", plat: navigator.platform || "N/A" };
+}
+
+/* ---- 5) UA / UA-CH ---- */
+function uaFingerprint(){
+  try { beacon("UA", navigator.userAgent); } catch(e){}
+  if (navigator.userAgentData){
+    try {
+      navigator.userAgentData.getHighEntropyValues(["platform","platformVersion","architecture","bitness","model","uaFullVersion","fullVersionList","wow64"])
+        .then(function(d){ beacon("UA_CH", JSON.stringify(d)); }, function(e){ beacon("UA_CH_ERR", e.message); });
+    } catch(e){}
+  }
+}
+
+/* ---- DONE + verdict + özet ---- */
+function finish(){
+  beacon("SCAN_DONE", new Date().toISOString());
+  var v;
+  if (kills.length) v = { c:'ok', t:'KILL METOT BULUNDU', s: kills.slice(0,6).join(', ') + (kills.length>6 ? ' …+'+(kills.length-6) : '') };
+  else if (bridgesFound.length) v = { c:'try', t:'KÖPRÜ VAR (KILL yok)', s: bridgesFound.length + ' köprü nesnesi; tehlikeli isim yok' };
+  else v = { c:'bad', t:'KÖPRÜ YOK', s:'native bridge bulunamadı' };
+  var box = document.getElementById('verdict');
+  box.className = v.c; box.querySelector('.big').textContent = v.t; box.querySelector('.why').textContent = v.s;
+  window.__kill = { kills: kills, bridges: bridgesFound, info: info, verdict: v };
+  post("SUMMARY " + JSON.stringify({ kills: kills, bridges: bridgesFound.slice(0,8), gpu: info.gpu, env: info.env }));
+  oAppend("=== " + v.t + " (kills=" + kills.length + ", bridges=" + bridgesFound.length + ") ===");
+}
+
+function sendSummary(){
+  var p = window.__kill || { kills: kills, bridges: bridgesFound, info: info };
+  post("SUMMARY_MANUAL " + JSON.stringify({ kills: p.kills, bridges: (p.bridges||[]).slice(0,8), gpu: (p.info||{}).gpu, env: (p.info||{}).env }));
+  alert("Özet gönderildi");
+}
+function copyOut(){
+  var txt = JSON.stringify(window.__kill || { kills: kills, bridges: bridgesFound, info: info }, null, 2);
+  try { navigator.clipboard.writeText(txt).then(function(){ alert("Kopyalandı"); }, function(){ alert(txt); }); }
+  catch(e){ alert(txt); }
+}
+
+bridgeEnum();
+globalsEnum(iframeBaseline());
+gpuFingerprint();
+deviceFingerprint();
+uaFingerprint();
+setTimeout(finish, 600);
+</script>
+</body>
+</html>
