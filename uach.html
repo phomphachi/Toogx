@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>Togg IVI — Motor Sürüm / UA-CH</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="tabs">
+  <a href="index.html">🎯 Bypass Paneli</a>
+  <a href="probe.html">🔬 Ortam / WebView</a>
+  <a href="klavye.html">⌨️ Klavye / Seçim</a>
+  <a href="intent.html">🚪 S4 Intent</a>
+  <a class="active" href="uach.html">🧬 Sürüm/UA-CH</a>
+</nav>
+
+<h1>Togg IVI — Motor Sürüm / UA-CH Ölçüm</h1>
+<p class="sub">UA string sahte olabilir; <b>navigator.userAgentData</b> (UA-CH) + <b>özellik-yetenek parmak izi</b> + <b>WebGL GPU</b> ile gerçek Chromium/WebView sürümünü ve donanımı çıkarmayı dener. Sonuç ntfy'ye düşer.</p>
+
+<div id="verdict" class="try"><div class="big">…</div><div class="why">okunuyor</div></div>
+
+<div class="toolbar">
+  <button class="primary" onclick="runAll()">🧬 Sürümü ölç + gönder</button>
+  <button onclick="sendAll()">📡 ntfy'ye gönder</button>
+  <button onclick="exportAll()">📋 Kopyala</button>
+  <button class="reset" onclick="clearAll()">↺ Temizle</button>
+</div>
+
+<h2 class="section-title">Gerçek sürüm (UA-CH yüksek-entropi)</h2>
+<pre id="uach">okunuyor…</pre>
+
+<h2 class="section-title">UA string (spoof olabilir) &amp; izolasyon sinyalleri</h2>
+<pre id="uastr">okunuyor…</pre>
+
+<h2 class="section-title">Özellik-yetenek → minimum Chromium sürümü</h2>
+<pre id="feat">okunuyor…</pre>
+
+<h2 class="section-title">GPU / donanım (WebGL)</h2>
+<pre id="gpu">okunuyor…</pre>
+
+<h2 class="section-title">Log</h2>
+<div class="log-box" id="log"></div>
+
+<footer>Kendi aracın üzerinde, park hâlinde kullan · <a href="probe.html">← Ortam / WebView</a></footer>
+
+<script src="common.js"></script>
+<script>
+/* Sürüm/UA-CH ölçüm: UA sahte olsa da motordan gelen verileri okur. */
+var NT = "https://ntfy.sh/toggx-ivi-7f3k9q2m";
+function report(m){ try{ fetch(NT,{method:'POST',mode:'no-cors',body:'[uach] '+m}); }catch(e){} }
+function el(id){ return document.getElementById(id); }
+function log(m){ var e=el('log'); var ts=new Date().toLocaleTimeString('tr-TR'); e.innerHTML += '<div>['+ts+'] '+m+'</div>'; e.scrollTop=e.scrollHeight; }
+
+/* Özellik → o özellik ilk çıkan Chromium major sürümü (alt sınır hesabı). */
+var FEATS = [
+  ['WeakRef', 84], ['String.prototype.replaceAll', 85], ['Promise.any', 85],
+  ['Intl.Segmenter', 87], ['CompressionStream', 80], ['navigator.userAgentData', 90],
+  ['Array.prototype.at', 92], ['Object.hasOwn', 93], ['Array.prototype.findLast', 97],
+  ['Array.prototype.findLastIndex', 97], ['structuredClone', 98],
+  ['HTMLInputElement.prototype.showPicker', 99],
+  ['Array.prototype.toReversed', 110], ['Array.prototype.toSorted', 110],
+  ['String.prototype.isWellFormed', 111], ['ArrayBuffer.prototype.transfer', 114],
+  ['Object.groupBy', 117], ['Promise.withResolvers', 119], ['URL.canParse', 120],
+  ['Array.fromAsync', 121], ['Set.prototype.union', 122]
+];
+
+var result = {};
+
+function hasPath(p){
+  try{
+    var a = p.split('.'), o = window;
+    for (var i=0;i<a.length;i++){ if (o == null) return false; o = o[a[i]]; }
+    return (typeof o !== 'undefined');
+  } catch(e){ return false; }
+}
+
+function gpu(){
+  try{
+    var c = document.createElement('canvas');
+    var gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+    if (!gl) return { webgl: false };
+    var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    var o = { webgl: true };
+    o.vendor = gl.getParameter(gl.VENDOR);
+    o.renderer = gl.getParameter(gl.RENDERER);
+    o.version = gl.getParameter(gl.VERSION);
+    o.glsl = gl.getParameter(gl.SHADING_LANGUAGE_VERSION);
+    o.maxTexture = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+    if (dbg){
+      o.unmaskedVendor = gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL);
+      o.unmaskedRenderer = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
+    }
+    return o;
+  } catch(e){ return { error: e.message }; }
+}
+
+function runAll(){
+  var env = {};
+
+  /* 1) UA-CH — app genelde UA string'i override eder ama bunu edemez. */
+  if (navigator.userAgentData){
+    env.uachBrands = navigator.userAgentData.brands;
+    env.uachMobile = navigator.userAgentData.mobile;
+    env.uachPlatform = navigator.userAgentData.platform;
+    var p = navigator.userAgentData.getHighEntropyValues(
+      ['platformVersion','architecture','model','uaFullVersion','fullVersionList','bitness','wow64']);
+    if (p && p.then){
+      p.then(function(v){
+        env.uachHi = v;
+        el('uach').textContent = JSON.stringify(v, null, 2);
+        result.uach = v;
+        log('UA-CH tam sürüm: ' + JSON.stringify(v.fullVersionList || v.uaFullVersion));
+        report('UACH ' + JSON.stringify(v));
+      }).catch(function(e){ el('uach').textContent = 'highEntropy hata: ' + e.message; });
+    }
+  } else {
+    el('uach').textContent = 'navigator.userAgentData YOK → eski/özel motor; UA string + özellik-parmak izine düşülür.';
+    env.uach = null;
+  }
+
+  /* 2) UA string + izolasyon sinyalleri. */
+  env.ua = navigator.userAgent;
+  env.platform = navigator.platform;
+  env.vendor = navigator.vendor;
+  env.language = navigator.language;
+  env.maxTouchPoints = navigator.maxTouchPoints;
+  env.hardwareConcurrency = navigator.hardwareConcurrency;
+  env.deviceMemory = navigator.deviceMemory;
+  env.webdriver = navigator.webdriver;
+  env.hasWindowChrome = !!window.chrome;
+  env.hasChromeRuntime = !!(window.chrome && window.chrome.runtime);
+  env.inIframe = (window.top !== window.self);
+  env.crossOriginIsolated = !!window.crossOriginIsolated;
+  env.href = location.href;
+  env.dpr = window.devicePixelRatio;
+  env.screen = screen.width + 'x' + screen.height;
+  try { env.tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch(e){}
+  el('uastr').textContent = JSON.stringify(env, null, 2);
+
+  /* 3) Özellik parmak izi → Chromium alt sınırı. */
+  var maxv = 0, ok = [], no = [];
+  FEATS.forEach(function(f){
+    if (hasPath(f[0])){ ok.push(f[0] + '(' + f[1] + ')'); if (f[1] > maxv) maxv = f[1]; }
+    else { no.push(f[0] + '(' + f[1] + ')'); }
+  });
+  el('feat').textContent = 'ALT SINIR: Chrome/WebView ≥ ' + (maxv || '?') + '\n\nVAR:   ' + ok.join(', ') + '\n\nYOK:   ' + no.join(', ');
+  result.features = { altSinir: maxv, var: ok, yok: no };
+
+  /* 4) GPU. */
+  var g = gpu();
+  el('gpu').textContent = JSON.stringify(g, null, 2);
+  result.gpu = g;
+
+  /* 5) Verdict. */
+  var v;
+  if (env.uachHi && env.uachHi.fullVersionList){ v = { t:'UA-CH OK', s:'Gerçek sürüm okunabildi', c:'ok' }; }
+  else if (navigator.userAgentData){ v = { t:'UA-CH (temel)', s:'Yüksek-entropi gelmedi', c:'try' }; }
+  else { v = { t:'UA-CH YOK', s:'Sürüm özellik-parmak iziyle: ≥ Chrome ' + maxv, c:'try' }; }
+  var box = el('verdict'); box.className = v.c;
+  box.querySelector('.big').textContent = v.t;
+  box.querySelector('.why').textContent = v.s;
+
+  result.env = env;
+  try { localStorage.setItem('togg_uach', JSON.stringify(result)); } catch(e){}
+  report('RESULT ' + JSON.stringify({ uach: result.uach, env: env, altSinir: maxv, gpu: g }));
+  log('ölçüm bitti → ' + (env.uachHi && env.uachHi.fullVersionList
+        ? 'UA-CH ' + JSON.stringify(env.uachHi.fullVersionList)
+        : 'UA-CH yok, ≥ Chrome ' + maxv));
+}
+
+function sendAll(){ report('ALL ' + JSON.stringify(result)); alert('ntfy ye gönderildi'); }
+function exportAll(){
+  var txt = JSON.stringify(result, null, 2);
+  try { navigator.clipboard.writeText(txt).then(function(){ alert('Kopyalandı'); }, function(){ alert(txt); }); }
+  catch(e){ alert(txt); }
+}
+function clearAll(){
+  result = {};
+  ['uach','uastr','feat','gpu'].forEach(function(id){ el(id).textContent = 'taranmadı'; });
+  el('log').innerHTML = '';
+}
+
+window.addEventListener('load', function(){ runAll(); });
+</script>
+</body>
+</html>
