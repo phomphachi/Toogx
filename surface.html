@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>Togg IVI — JS Yüzey (Bridge / Global / GPU)</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="tabs">
+  <a href="index.html">🎯 Bypass Paneli</a>
+  <a href="probe.html">🔬 Ortam / WebView</a>
+  <a href="klavye.html">⌨️ Klavye / Seçim</a>
+  <a href="intent.html">🚪 S4 Intent</a>
+  <a href="uach.html">🧬 Sürüm/UA-CH</a>
+  <a class="active" href="surface.html">🕸️ JS Yüzey</a>
+</nav>
+
+<h1>Togg IVI — JS Yüzey Taraması</h1>
+<p class="sub">Kiosktan <b>tek karede</b> en yüksek ROI'li üç ölçüm: <b>native JS köprü</b> (+ tehlikeli sink metotları), <b>standart-olmayan window global'leri</b>, <b>GPU + GL extension</b> (SoC / driver vintage). Yalnız <b>okur</b>, metot <b>çağırmaz</b>. Sonuç ntfy'ye düşer.</p>
+
+<div id="verdict" class="try"><div class="big">…</div><div class="why">taranmadı</div></div>
+
+<div class="toolbar">
+  <button class="primary" onclick="runAll()">🕸️ Yüzeyi tara + gönder</button>
+  <button onclick="sendAll()">📡 ntfy'ye gönder</button>
+  <button onclick="exportAll()">📋 Kopyala</button>
+  <button class="reset" onclick="clearAll()">↺ Temizle</button>
+</div>
+
+<h2 class="section-title">1) Native JS köprü (bridge) + sink metotları</h2>
+<pre id="bridges">taranmadı</pre>
+
+<h2 class="section-title">2) Standart-olmayan window global'leri</h2>
+<pre id="globals">taranmadı</pre>
+
+<h2 class="section-title">3) GPU + GL extension (SoC / driver vintage)</h2>
+<pre id="gpu">taranmadı</pre>
+
+<h2 class="section-title">Ortam</h2>
+<pre id="env">taranmadı</pre>
+
+<h2 class="section-title">Log</h2>
+<div class="log-box" id="log"></div>
+
+<footer>Kendi aracın üzerinde, park hâlinde kullan · <a href="probe.html">← Ortam / WebView</a></footer>
+
+<script src="common.js"></script>
+<script>
+var NT = "https://ntfy.sh/toggx-ivi-7f3k9q2m";
+function report(m){ try{ fetch(NT,{method:'POST',mode:'no-cors',body:'[surface] '+m}); }catch(e){} }
+function el(id){ return document.getElementById(id); }
+function log(m){ var e=el('log'); var ts=new Date().toLocaleTimeString('tr-TR'); e.innerHTML += '<div>['+ts+'] '+m+'</div>'; e.scrollTop=e.scrollHeight; }
+
+var MAX_PROTO_DEPTH = 4;
+var BRIDGE_CANDIDATES = ['Android','android','AndroidInterface','AndroidBridge','AndroidApp',
+  'JsBridge','jsBridge','JSBridge','jsInterface','jsHandler','nativeBridge','NativeBridge',
+  'nativeInterface','__bridge__','bridge','appInterface','webkit','WebViewBridge','webviewBridge',
+  '_cordovaNative','ReactNativeWebView','CarAPI','VehicleAPI','car','Car','vehicle','togg','Togg',
+  'ToggBridge','HMI','hmi','native','Native','app','App'];
+var RISK_HI = ['loadurl','open','start','exec','shell','run','install','launch','intent','cmd',
+  'command','process','eval','javascript','invoke','send','post','write','delete','remove','wifi',
+  'adb','setting','system','file','download','upload','put','set','enable','disable','unlock',
+  'reboot','power','grant','permission','call','inject'];
+var RISK_MID = ['get','read','info','data','token','device','version','id','list','query','state',
+  'status','property','config','prop'];
+var SKIP_KEYS = ['window','document','location','navigator','top','self','frames','parent'];
+var OWN_GLOBALS = ['ToggKit'];
+var SOFTWARE_GL = /swiftshader|llvmpipe|softpipe|software|angle \(.*swiftshader/i;
+
+var result = {};
+
+function riskOf(n){
+  n = String(n).toLowerCase();
+  for (var i=0;i<RISK_HI.length;i++){ if (n.indexOf(RISK_HI[i]) >= 0) return 'HIGH'; }
+  for (var j=0;j<RISK_MID.length;j++){ if (n.indexOf(RISK_MID[j]) >= 0) return 'MID'; }
+  return 'LOW';
+}
+
+/* Verilen nesnenin metotlarını prototip zinciri boyunca (derinlik sınırlı) toplar. */
+function methodsOf(obj){
+  var seen = {}, out = [], o = obj, depth = 0;
+  while (o && o !== Object.prototype && depth < MAX_PROTO_DEPTH){
+    var names = [];
+    try { names = Object.getOwnPropertyNames(o); } catch(e){ names = []; }
+    names.forEach(function(m){
+      if (m === 'constructor' || seen[m]) return;
+      seen[m] = 1;
+      var t = '?';
+      try { t = typeof obj[m]; } catch(e){ t = 'throw'; }
+      var rec = { m:m, t:t, r:riskOf(m) };
+      if (t === 'function'){ try { rec.n = obj[m].length; } catch(e){} }
+      out.push(rec);
+    });
+    try { o = Object.getPrototypeOf(o); } catch(e){ break; }
+    depth++;
+  }
+  return out;
+}
+
+/* Boş/same-origin iframe'in window'u = "temiz" baseline; fark = enjekte global. */
+function iframeDefaults(){
+  try {
+    var f = document.createElement('iframe');
+    f.style.display = 'none';
+    document.body.appendChild(f);
+    var s = new Set(Object.getOwnPropertyNames(f.contentWindow));
+    f.remove();
+    return s;
+  } catch(e){ return null; }
+}
+
+function enumBridges(defaults){
+  var found = [], names;
+  try { names = Object.getOwnPropertyNames(window); } catch(e){ names = []; }
+  names.forEach(function(k){
+    if (OWN_GLOBALS.indexOf(k) !== -1 || SKIP_KEYS.indexOf(k) !== -1) return;
+    var isCandidate = BRIDGE_CANDIDATES.indexOf(k) !== -1;
+    var injected = defaults ? !defaults.has(k) : isCandidate;
+    if (!isCandidate && !injected) return;
+    var v; try { v = window[k]; } catch(e){ return; }
+    var rec = { name:k, injected:injected };
+    if (typeof v === 'function'){ rec.type = 'function'; try { rec.fn = v.name || ''; } catch(e){} rec.methods = methodsOf(v); }
+    else if (v && typeof v === 'object'){ rec.type = 'object'; try { rec.ctor = v.constructor && v.constructor.name; } catch(e){} rec.methods = methodsOf(v); }
+    else { rec.type = typeof v; rec.methods = []; }
+    rec.high = rec.methods.filter(function(x){ return x.r === 'HIGH'; }).map(function(x){ return x.m; });
+    found.push(rec);
+  });
+  return found;
+}
+
+function enumGlobals(defaults){
+  var injected = [], all, syms = [];
+  try { all = Object.getOwnPropertyNames(window); } catch(e){ all = []; }
+  all.forEach(function(k){
+    if (OWN_GLOBALS.indexOf(k) !== -1) return;
+    if (defaults && defaults.has(k)) return;
+    var t = '?'; try { t = typeof window[k]; } catch(e){ t = 'throw'; }
+    injected.push({ name:k, type:t });
+  });
+  try { syms = Object.getOwnPropertySymbols(window).map(String); } catch(e){}
+  return { injected:injected, symbols:syms, total:all.length, baseline: defaults ? defaults.size : null };
+}
+
+function gpuInfo(){
+  var o = { webgl:false };
+  try {
+    var c = document.createElement('canvas');
+    var gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+    if (!gl) return o;
+    o.webgl = true;
+    o.vendor = gl.getParameter(gl.VENDOR);
+    o.renderer = gl.getParameter(gl.RENDERER);
+    o.version = gl.getParameter(gl.VERSION);
+    o.glsl = gl.getParameter(gl.SHADING_LANGUAGE_VERSION);
+    o.maxTexture = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+    o.maxRenderbuffer = gl.getParameter(gl.MAX_RENDERBUFFER_SIZE);
+    o.maxVertexAttribs = gl.getParameter(gl.MAX_VERTEX_ATTRIBS);
+    var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    if (dbg){
+      o.unmaskedVendor = gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL);
+      o.unmaskedRenderer = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
+    }
+    var exts = [];
+    try { exts = gl.getSupportedExtensions() || []; } catch(e){ exts = []; }
+    o.extensionCount = exts.length;
+    o.extensions = exts;
+    o.software = SOFTWARE_GL.test(String(o.unmaskedRenderer || o.renderer || ''));
+    var lc = gl.getExtension('WEBGL_lose_context'); if (lc) lc.loseContext();
+    return o;
+  } catch(e){ o.error = e.message; return o; }
+}
+
+function envInfo(cb){
+  var e = {};
+  e.ua = navigator.userAgent;
+  e.platform = navigator.platform;
+  e.vendor = navigator.vendor;
+  e.language = navigator.language;
+  e.deviceMemory = navigator.deviceMemory || 'N/A';
+  e.hardwareConcurrency = navigator.hardwareConcurrency || 'N/A';
+  e.maxTouchPoints = navigator.maxTouchPoints;
+  e.webdriver = navigator.webdriver;
+  e.inIframe = (window.top !== window.self);
+  e.crossOriginIsolated = !!window.crossOriginIsolated;
+  e.dpr = window.devicePixelRatio;
+  e.screen = screen.width + 'x' + screen.height;
+  e.viewport = window.innerWidth + 'x' + window.innerHeight;
+  e.plugins = navigator.plugins ? navigator.plugins.length : 'N/A';
+  try { e.tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch(err){}
+  var done = function(){ cb(e); };
+  if (navigator.storage && navigator.storage.estimate){
+    navigator.storage.estimate().then(function(v){ e.storageQuota = v.quota; e.storageUsage = v.usage; done(); }, function(){ done(); });
+  } else { done(); }
+}
+
+function runAll(){
+  var defaults = iframeDefaults();
+  var bridges = enumBridges(defaults);
+  var globals = enumGlobals(defaults);
+  el('bridges').textContent = bridges.length ? JSON.stringify(bridges, null, 2)
+    : 'köprü bulunamadı (baseline ' + (defaults ? defaults.size : '?') + ' özellik)';
+  el('globals').textContent = JSON.stringify(globals, null, 2);
+  var g = gpuInfo();
+  el('gpu').textContent = JSON.stringify(g, null, 2);
+  var anyHigh = bridges.some(function(b){ return b.high && b.high.length; });
+  log('köprü ' + bridges.length + ' | enjekte global ' + globals.injected.length + ' | GPU ' + (g.unmaskedRenderer || g.renderer || 'yok') + (g.software ? ' (yazılım!)' : ''));
+
+  envInfo(function(e){
+    el('env').textContent = JSON.stringify(e, null, 2);
+    result = { bridges:bridges, globals:globals, gpu:g, env:e };
+    var v;
+    if (anyHigh) v = { c:'ok', t:'KÖPRÜ + SINK', s:'Yüksek-riskli bridge metodu → native çağrı yolu var' };
+    else if (bridges.length) v = { c:'try', t:'KÖPRÜ VAR', s:'Metotlar listelendi; HIGH sink işareti yok' };
+    else if (globals.injected.length) v = { c:'try', t:'ENJEKTE GLOBAL', s:'Bridge değil ama standart-dışı global var' };
+    else v = { c:'bad', t:'YÜZEY YOK', s:'Bridge/global bulunamadı → WebView izole' };
+    var box = el('verdict'); box.className = v.c;
+    box.querySelector('.big').textContent = v.t;
+    box.querySelector('.why').textContent = v.s;
+    try { localStorage.setItem('togg_surface', JSON.stringify(result)); } catch(err){}
+    report('SURFACE ' + JSON.stringify({
+      bridges: bridges.map(function(b){ return { name:b.name, type:b.type, high:b.high }; }),
+      globals: globals.injected,
+      gpu: { renderer: g.unmaskedRenderer || g.renderer, software: g.software, ext: g.extensionCount },
+      env: { dm: e.deviceMemory, hc: e.hardwareConcurrency, plat: e.platform }
+    }));
+    log('bitti → ' + v.t);
+  });
+}
+
+function sendAll(){ report('ALL ' + JSON.stringify(result)); alert('ntfy ye gönderildi'); }
+function exportAll(){
+  var txt = JSON.stringify(result, null, 2);
+  try { navigator.clipboard.writeText(txt).then(function(){ alert('Kopyalandı'); }, function(){ alert(txt); }); }
+  catch(e){ alert(txt); }
+}
+function clearAll(){
+  result = {};
+  ['bridges','globals','gpu','env'].forEach(function(id){ el(id).textContent = 'taranmadı'; });
+  el('log').innerHTML = '';
+  el('verdict').className = 'try';
+  el('verdict').querySelector('.big').textContent = '…';
+  el('verdict').querySelector('.why').textContent = 'taranmadı';
+}
+
+window.addEventListener('load', function(){ runAll(); });
+</script>
+</body>
+</html>
