@@ -41,6 +41,9 @@
 <h2 class="section-title">3) GPU + GL extension (SoC / driver vintage)</h2>
 <pre id="gpu">taranmadı</pre>
 
+<h2 class="section-title">4) WebView hardening (fingerprint / policy)</h2>
+<pre id="hard">taranmadı</pre>
+
 <h2 class="section-title">Ortam</h2>
 <pre id="env">taranmadı</pre>
 
@@ -198,38 +201,97 @@ function envInfo(cb){
   } else { done(); }
 }
 
+function featureFingerprint(){
+  var o = {};
+  o.fetch = typeof fetch; o.Promise = typeof Promise; o.BigInt = typeof BigInt;
+  o.WeakRef = typeof WeakRef; o.FinalizationRegistry = typeof FinalizationRegistry;
+  o.structuredClone = typeof structuredClone; o.reportError = typeof reportError;
+  o.Request = typeof Request; o.Response = typeof Response; o.Headers = typeof Headers;
+  o.IntersectionObserver = typeof IntersectionObserver; o.ResizeObserver = typeof ResizeObserver;
+  o.BroadcastChannel = typeof BroadcastChannel; o.WebAssembly = typeof WebAssembly;
+  o.SharedArrayBuffer = typeof SharedArrayBuffer; o.Atomics = typeof Atomics;
+  o.cookieStore = typeof cookieStore; o.scheduler = typeof scheduler;
+  o.trustedTypes = typeof trustedTypes; o.uaData = !!(navigator.userAgentData);
+  o.replaceAll = typeof String.prototype.replaceAll; o.arrayAt = typeof Array.prototype.at;
+  o.requestIdleCallback = typeof requestIdleCallback; o.queueMicrotask = typeof queueMicrotask;
+  o.OffscreenCanvas = typeof OffscreenCanvas;
+  try { o.webgl2 = !!document.createElement('canvas').getContext('webgl2'); } catch(e){ o.webgl2 = false; }
+  return o;
+}
+
+function hardeningInfo(cb){
+  var o = { secureContext: !!(window.isSecureContext), protocol: location.protocol, origin: location.origin };
+  try { o.cookieEnabled = navigator.cookieEnabled; } catch(e){}
+  o.featurePolicy = !!document.featurePolicy;
+  try { var m = document.querySelector('meta[http-equiv="Content-Security-Policy"]'); o.csp = m ? (m.content || '') : 'yok'; } catch(e){ o.csp = '?'; }
+  o.features = featureFingerprint();
+  var srcs = [];
+  try { [].forEach.call(document.scripts, function(s){ if (s.src) srcs.push(s.src); }); } catch(e){}
+  o.scriptCount = srcs.length;
+  var pending = 4;
+  function fin(){ if (--pending <= 0) cb(o); }
+  try {
+    fetch(NT, { method:'POST', mode:'cors', headers:{'X-Probe':'1'}, body:'[surface] corsprobe' })
+      .then(function(r){ o.corsProbe = 'ok:' + r.type; fin(); }, function(e){ o.corsProbe = 'blok:' + (e && e.name || 'err'); fin(); });
+  } catch(e){ o.corsProbe = 'throw:' + e.name; fin(); }
+  try {
+    fetch('http://ntfy.sh/', { mode:'no-cors' }).then(function(){ o.mixedContent = 'izin'; fin(); }, function(e){ o.mixedContent = 'blok:' + (e && e.name || 'err'); fin(); });
+  } catch(e){ o.mixedContent = 'throw:' + e.name; fin(); }
+  try {
+    if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues){
+      navigator.userAgentData.getHighEntropyValues(['platformVersion','fullVersionList','architecture','bitness','model','uaFullVersion'])
+        .then(function(v){ o.highEntropy = v; fin(); }, function(e){ o.highEntropy = 'err'; fin(); });
+    } else { o.highEntropy = 'yok'; fin(); }
+  } catch(e){ o.highEntropy = 'throw:' + e.name; fin(); }
+  (function(){
+    var same = srcs.filter(function(u){ try { return new URL(u, location.href).origin === location.origin; } catch(e){ return false; } });
+    if (!same.length){ o.sourcemap = 'denenmedi (same-origin script yok)'; fin(); return; }
+    var u = same[0];
+    fetch(u + '.map', { method:'GET', mode:'cors' }).then(function(r){ o.sourcemap = u.split('/').pop() + '.map -> ' + r.status; fin(); }, function(e){ o.sourcemap = 'blok:' + (e && e.name || 'err'); fin(); });
+  })();
+}
+
 function runAll(){
   var defaults = iframeDefaults();
   var bridges = enumBridges(defaults);
   var globals = enumGlobals(defaults);
+  var g = gpuInfo();
   el('bridges').textContent = bridges.length ? JSON.stringify(bridges, null, 2)
     : 'köprü bulunamadı (baseline ' + (defaults ? defaults.size : '?') + ' özellik)';
   el('globals').textContent = JSON.stringify(globals, null, 2);
-  var g = gpuInfo();
   el('gpu').textContent = JSON.stringify(g, null, 2);
   var anyHigh = bridges.some(function(b){ return b.high && b.high.length; });
   log('köprü ' + bridges.length + ' | enjekte global ' + globals.injected.length + ' | GPU ' + (g.unmaskedRenderer || g.renderer || 'yok') + (g.software ? ' (yazılım!)' : ''));
 
-  envInfo(function(e){
-    el('env').textContent = JSON.stringify(e, null, 2);
-    result = { bridges:bridges, globals:globals, gpu:g, env:e };
-    var v;
-    if (anyHigh) v = { c:'ok', t:'KÖPRÜ + SINK', s:'Yüksek-riskli bridge metodu → native çağrı yolu var' };
-    else if (bridges.length) v = { c:'try', t:'KÖPRÜ VAR', s:'Metotlar listelendi; HIGH sink işareti yok' };
-    else if (globals.injected.length) v = { c:'try', t:'ENJEKTE GLOBAL', s:'Bridge değil ama standart-dışı global var' };
-    else v = { c:'bad', t:'YÜZEY YOK', s:'Bridge/global bulunamadı → WebView izole' };
-    var box = el('verdict'); box.className = v.c;
-    box.querySelector('.big').textContent = v.t;
-    box.querySelector('.why').textContent = v.s;
-    try { localStorage.setItem('togg_surface', JSON.stringify(result)); } catch(err){}
-    report('SURFACE ' + JSON.stringify({
-      bridges: bridges.map(function(b){ return { name:b.name, type:b.type, high:b.high }; }),
-      globals: globals.injected,
-      gpu: { renderer: g.unmaskedRenderer || g.renderer, software: g.software, ext: g.extensionCount },
-      env: { dm: e.deviceMemory, hc: e.hardwareConcurrency, plat: e.platform }
-    }));
-    log('bitti → ' + v.t);
+  result = { bridges:bridges, globals:globals, gpu:g };
+  var pending = 2;
+  function step(){ if (--pending === 0) finalize(anyHigh); }
+  hardeningInfo(function(h){
+    result.hardening = h; el('hard').textContent = JSON.stringify(h, null, 2);
+    log('hardening: secure=' + h.secureContext + ' TT=' + h.trustedTypes + ' cors=' + h.corsProbe + ' mixed=' + h.mixedContent); step();
   });
+  envInfo(function(e){ result.env = e; el('env').textContent = JSON.stringify(e, null, 2); step(); });
+}
+
+function finalize(anyHigh){
+  var bridges = result.bridges, globals = result.globals, g = result.gpu, e = result.env, h = result.hardening;
+  var v;
+  if (anyHigh) v = { c:'ok', t:'KÖPRÜ + SINK', s:'Yüksek-riskli bridge metodu → native çağrı yolu var' };
+  else if (bridges.length) v = { c:'try', t:'KÖPRÜ VAR', s:'Metotlar listelendi; HIGH sink işareti yok' };
+  else if (globals.injected.length) v = { c:'try', t:'ENJEKTE GLOBAL', s:'Bridge değil ama standart-dışı global var' };
+  else v = { c:'bad', t:'YÜZEY YOK', s:'Bridge/global bulunamadı → WebView izole' };
+  var box = el('verdict'); box.className = v.c;
+  box.querySelector('.big').textContent = v.t;
+  box.querySelector('.why').textContent = v.s;
+  try { localStorage.setItem('togg_surface', JSON.stringify(result)); } catch(err){}
+  report('SURFACE ' + JSON.stringify({
+    bridges: bridges.map(function(b){ return { name:b.name, type:b.type, high:b.high }; }),
+    globals: globals.injected,
+    gpu: { renderer: g.unmaskedRenderer || g.renderer, software: g.software, ext: g.extensionCount },
+    env: { dm: e.deviceMemory, hc: e.hardwareConcurrency, plat: e.platform },
+    hardening: h ? { secure:h.secureContext, tt:h.trustedTypes, csp:h.csp, cors:h.corsProbe, mixed:h.mixedContent, sm:h.sourcemap, he:h.highEntropy } : null
+  }));
+  log('bitti → ' + v.t);
 }
 
 function sendAll(){ report('ALL ' + JSON.stringify(result)); alert('ntfy ye gönderildi'); }
@@ -240,7 +302,7 @@ function exportAll(){
 }
 function clearAll(){
   result = {};
-  ['bridges','globals','gpu','env'].forEach(function(id){ el(id).textContent = 'taranmadı'; });
+  ['bridges','globals','gpu','hard','env'].forEach(function(id){ el(id).textContent = 'taranmadı'; });
   el('log').innerHTML = '';
   el('verdict').className = 'try';
   el('verdict').querySelector('.big').textContent = '…';
