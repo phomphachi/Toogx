@@ -20,6 +20,12 @@ Kendi aracının (Togg) IVI/WebView yüzeyini **park hâlinde** test eden statik
 - **Exploit / Oto-Test:** https://phomphachi.github.io/Toogx/exploit.html#auto  (açılınca otomatik başlar; **sıkı mod = üst sayfa asla terk edilmez**)
 - **Exploit / Oto-Test (SERBEST NAV — dikkat):** https://phomphachi.github.io/Toogx/exploit.html#auto&nav  (`sandbox` yok; `location.href` ile şema dener — "sayfa kaldı" = blok, "terk edildi" = sinyal. Bu modda sayfa kaybolabilir; sadece bilinçli kullan.)
 - **S4 Intent:** https://phomphachi.github.io/Toogx/intent.html
+- **Sürüm / UA-CH:** https://phomphachi.github.io/Toogx/uach.html  (motor/UA-CH sürüm ölçümü + ntfy)
+- **Yüzey tarayıcı:** https://phomphachi.github.io/Toogx/surface.html  (JS köprü/sink/global + GPU yüzeyi)
+- **KILL probu:** https://phomphachi.github.io/Toogx/kill.html  (KILL-flag yüzey taraması)
+- **Invoke:** https://phomphachi.github.io/Toogx/invoke.html  (kademeli KILL-probe + kaçış tespiti)
+- **Dosya seçici:** https://phomphachi.github.io/Toogx/upload.html  (WebView file-chooser/focus-trap/IME)
+- **DevOptions:** https://phomphachi.github.io/Toogx/devopt.html  (FLAG_SECURE/navigasyon ayrım probu)
 
 > Not: `github.com/.../blob/...` adresi **kaynak kodu** gösterir, sayfayı çalıştırmaz.
 > Çalışan site her zaman **`.github.io`** adresidir (GitHub Pages).
@@ -32,6 +38,12 @@ Kendi aracının (Togg) IVI/WebView yüzeyini **park hâlinde** test eden statik
 | `klavye.html` | Klavye + metin-seçim menüsü testi, giriş gecikmesi ölçer, manuel geçiş yolları |
 | `portal.html` | Captive-portal yükü — sistem WebView'inde OOB vektörlerini sırayla dener, kaçış sinyalini loglar |
 | `exploit.html` | **YENİ!** WebView exploit paneli — kritik sistem erişimi için önceden hazırlanmış intent exploit'leri |
+| `uach.html` | Motor/UA-CH sürüm ölçümü — `navigator.userAgentData`, UA-izolasyon sinyalleri, API→min Chromium tablosu, GPU unmasked (ntfy) |
+| `surface.html` | JS yüzey tarayıcı — köprü/sink metot, enjekte globals, GPU/GL ext |
+| `kill.html` | KILL-flag yüzey taraması (bridge+globals+GPU+UA) |
+| `invoke.html` | Kademeli KILL-probe (no-arg/empty/benign/intent) + kaçış tespiti |
+| `upload.html` | WebView dosya-seçici/focus-trap/IME kanal probu |
+| `devopt.html` | FLAG_SECURE/navigasyon ayrım probu (heartbeat+visibility+pagehide) |
 | `captive_server.py` | Laptop AP'si için minimal portal sunucusu (bağımlılıksız): DNS hijack + HTTP `302` → `portal.html` |
 
 ## Kullanım
@@ -49,4 +61,4 @@ Aracı laptopun AP'sine bağlayıp **sistem WebView'inde** `portal.html`'i açt�
 > Düz hotspot portal **tetiklemez**; tetikleyen şey DNS'i laptop IP'sine çevirip HTTP'yi `302`'lemektir (bu sunucu onu yapar).
 
 ## Yapı
-`index.html` · `probe.html` · `klavye.html` · `portal.html` · `style.css` (ortak tema) · `common.js` (`ToggKit` — intent üretici) · `captive_server.py` (yerel portal sunucusu)
+`index.html` · `probe.html` · `klavye.html` · `portal.html` · `exploit.html` · `intent.html` · `uach.html` · `surface.html` · `kill.html` · `invoke.html` · `upload.html` · `devopt.html` · `style.css` (ortak tema) · `common.js` (`ToggKit` — intent üretici) · `captive_server.py` (yerel portal sunucusu)
